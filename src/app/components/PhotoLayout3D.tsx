@@ -16,6 +16,20 @@ type PhotoPlacement = {
   height: number;
 };
 
+const ICOSAHEDRON_FACE_NORMALS = (() => {
+  const geometry = new THREE.IcosahedronGeometry(1, 0).toNonIndexed();
+  const position = geometry.getAttribute('position');
+  const normals: THREE.Vector3[] = [];
+  for (let i = 0; i < position.count; i += 3) {
+    const a = new THREE.Vector3().fromBufferAttribute(position, i);
+    const b = new THREE.Vector3().fromBufferAttribute(position, i + 1);
+    const c = new THREE.Vector3().fromBufferAttribute(position, i + 2);
+    normals.push(new THREE.Triangle(a, b, c).getNormal(new THREE.Vector3()).normalize());
+  }
+  geometry.dispose();
+  return normals;
+})();
+
 export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -103,17 +117,9 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
     };
 
     const getPolyhedronPlacement = (index: number, total: number): PhotoPlacement => {
-      const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-      const t = total === 1 ? 0 : index / (total - 1);
-      const y = 1 - 2 * t;
-      const radiusAtY = Math.sqrt(Math.max(0.02, 1 - y * y));
-      const angle = index * goldenAngle;
-      const normal = new THREE.Vector3(
-        Math.cos(angle) * radiusAtY,
-        y,
-        Math.sin(angle) * radiusAtY,
-      ).normalize();
-      const position = normal.clone().multiplyScalar(10.8);
+      const normal = ICOSAHEDRON_FACE_NORMALS[index % ICOSAHEDRON_FACE_NORMALS.length].clone();
+      const layer = Math.floor(index / ICOSAHEDRON_FACE_NORMALS.length);
+      const position = normal.clone().multiplyScalar(10.2 + layer * 0.16);
       const orientation = new THREE.Matrix4().lookAt(position, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0));
       const rotation = new THREE.Euler().setFromRotationMatrix(orientation);
       return { position, rotation, width: 1.62, height: 1.62 };
@@ -121,12 +127,12 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
 
     const getSpiralPlacement = (index: number, total: number): PhotoPlacement => {
       const progress = total === 1 ? 0.5 : index / (total - 1);
-      const turns = 3.6;
+      const turns = Math.max(3.2, Math.min(7.2, total / 14));
       const angle = progress * Math.PI * 2 * turns;
-      const radius = 4.8 + progress * 4.6;
+      const radius = 8.2;
       const y = (0.5 - progress) * 13.5;
       const position = new THREE.Vector3(Math.sin(angle) * radius, y, Math.cos(angle) * radius);
-      const rotation = new THREE.Euler(0, angle, THREE.MathUtils.degToRad(-10 + progress * 20));
+      const rotation = new THREE.Euler(0, angle, THREE.MathUtils.degToRad(index % 2 === 0 ? -8 : 8));
       return { position, rotation, width: 1.55, height: 1.25 };
     };
 

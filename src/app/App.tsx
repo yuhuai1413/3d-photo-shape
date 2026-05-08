@@ -3,6 +3,10 @@ import { Upload, Camera, Trash2, ArrowLeft, X, Sparkles, Shapes } from 'lucide-r
 import PhotoSphere3D from './components/PhotoSphere3D';
 import PhotoLayout3D, { PhotoLayoutVariant } from './components/PhotoLayout3D';
 import LoadingSpinner from './components/LoadingSpinner';
+import sphereLogo from '../assets/gallery-logos/sphere.png';
+import cylinderLogo from '../assets/gallery-logos/cylinder.png';
+import polyhedronLogo from '../assets/gallery-logos/polyhedron.png';
+import spiralLogo from '../assets/gallery-logos/spiral.png';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -41,6 +45,7 @@ type GalleryStyle = {
   maxPhotos: number;
   accent: string;
   preview: 'orb' | 'cylinder' | 'polyhedron' | 'spiral';
+  logo: string;
   variant?: PhotoLayoutVariant;
 };
 
@@ -61,6 +66,7 @@ const GALLERY_STYLES: GalleryStyle[] = [
     maxPhotos: 120,
     accent: 'from-violet-500 via-fuchsia-500 to-blue-500',
     preview: 'orb',
+    logo: sphereLogo,
   },
   {
     id: 'cylinder',
@@ -70,6 +76,7 @@ const GALLERY_STYLES: GalleryStyle[] = [
     maxPhotos: 80,
     accent: 'from-cyan-500 via-blue-500 to-violet-500',
     preview: 'cylinder',
+    logo: cylinderLogo,
     variant: 'cylinder',
   },
   {
@@ -80,6 +87,7 @@ const GALLERY_STYLES: GalleryStyle[] = [
     maxPhotos: 60,
     accent: 'from-amber-400 via-rose-500 to-violet-600',
     preview: 'polyhedron',
+    logo: polyhedronLogo,
     variant: 'polyhedron',
   },
   {
@@ -90,6 +98,7 @@ const GALLERY_STYLES: GalleryStyle[] = [
     maxPhotos: 100,
     accent: 'from-emerald-400 via-cyan-500 to-indigo-600',
     preview: 'spiral',
+    logo: spiralLogo,
     variant: 'spiral',
   },
 ];
@@ -97,122 +106,28 @@ const GALLERY_STYLES: GalleryStyle[] = [
 const getStyleById = (id: GalleryStyleId) => GALLERY_STYLES.find((style) => style.id === id) ?? GALLERY_STYLES[0];
 
 function StylePreview({
-  type,
   accent,
+  logo,
+  name,
   compact = false,
 }: {
-  type: GalleryStyle['preview'];
   accent: string;
+  logo: string;
+  name: string;
   compact?: boolean;
 }) {
-  const scale = compact ? 0.58 : 1;
-  const tileClass = `absolute block rounded-[6px] border border-white/75 bg-gradient-to-br ${accent} shadow-[0_8px_24px_rgba(0,0,0,0.35)]`;
-  const sphereTiles = [
-    { x: 0, y: -57, scale: 0.7, rotate: -8 },
-    { x: 39, y: -42, scale: 0.82, rotate: 18 },
-    { x: 61, y: -9, scale: 0.95, rotate: 7 },
-    { x: 48, y: 31, scale: 0.86, rotate: -17 },
-    { x: 13, y: 55, scale: 0.72, rotate: 11 },
-    { x: -31, y: 47, scale: 0.86, rotate: -10 },
-    { x: -59, y: 12, scale: 0.95, rotate: 15 },
-    { x: -50, y: -28, scale: 0.82, rotate: -18 },
-    { x: -13, y: -8, scale: 1.05, rotate: 3 },
-  ];
-  const cylinderTiles = Array.from({ length: 12 }, (_, index) => {
-    const angle = (index / 12) * Math.PI * 2;
-    return {
-      x: Math.cos(angle) * 78,
-      y: Math.sin(angle) * 21,
-      scale: 0.62 + Math.sin(angle) * 0.18,
-      rotate: Math.sin(angle) * -10,
-      opacity: 0.55 + Math.sin(angle) * 0.35,
-    };
-  });
-  const spiralTiles = Array.from({ length: 13 }, (_, index) => {
-    const t = index / 12;
-    const angle = t * Math.PI * 2.15 - 0.5;
-    return {
-      x: Math.cos(angle) * (28 + t * 54),
-      y: -57 + t * 114,
-      scale: 0.62 + t * 0.42,
-      rotate: -28 + t * 56,
-    };
-  });
-
   return (
-    <div className={`${compact ? 'h-24 w-36 rounded-[20px]' : 'h-44 rounded-[24px]'} relative overflow-hidden bg-gradient-to-br from-slate-950 via-purple-950 to-black border border-white/10 shadow-inner`}>
+    <div
+      className={`${compact ? 'size-28 rounded-[20px]' : 'h-[clamp(190px,38%,376px)] rounded-[24px]'} relative shrink-0 overflow-hidden bg-gradient-to-br from-slate-950 via-purple-950 to-black border border-white/10 shadow-inner`}
+    >
       <div className={`absolute inset-0 opacity-25 bg-gradient-to-br ${accent}`} />
       <div className="absolute inset-0 flex items-center justify-center">
-        {type === 'orb' && (
-          <div className="relative h-36 w-36 rounded-full border border-white/25 bg-white/[0.03] shadow-[inset_0_0_38px_rgba(255,255,255,0.08)]" style={{ transform: `scale(${scale})` }}>
-            <div className="absolute left-4 right-4 top-1/2 h-px bg-white/18" />
-            <div className="absolute bottom-7 left-5 right-5 h-10 rounded-[50%] border border-white/14" />
-            <div className="absolute left-5 right-5 top-7 h-10 rounded-[50%] border border-white/14" />
-            <div className="absolute inset-y-2 left-1/2 w-14 -translate-x-1/2 rounded-[50%] border border-white/16" />
-            <div className="absolute inset-y-2 left-1/2 w-24 -translate-x-1/2 rounded-[50%] border border-white/10" />
-            {sphereTiles.map((tile, index) => (
-              <span
-                key={index}
-                className={`${tileClass} left-1/2 top-1/2 h-8 w-10`}
-                style={{
-                  transform: `translate(${tile.x}px, ${tile.y}px) translate(-50%, -50%) rotate(${tile.rotate}deg) scale(${tile.scale})`,
-                }}
-              />
-            ))}
-          </div>
-        )}
-
-        {type === 'cylinder' && (
-          <div className="relative h-36 w-48" style={{ transform: `scale(${scale})` }}>
-            <div className="absolute left-4 right-4 top-5 h-10 rounded-[50%] border border-cyan-100/35 bg-cyan-100/5" />
-            <div className="absolute bottom-5 left-4 right-4 h-10 rounded-[50%] border border-cyan-100/35 bg-cyan-100/5" />
-            <div className="absolute bottom-10 left-4 right-4 top-10 border-x border-cyan-100/18" />
-            <div className="absolute left-1/2 top-1/2 h-[104px] w-[158px] -translate-x-1/2 -translate-y-1/2 rounded-[50%] border border-white/8" />
-            {cylinderTiles.map((tile, index) => (
-              <span
-                key={index}
-                className={`${tileClass} left-1/2 top-1/2 h-10 w-8`}
-                style={{
-                  transform: `translate(${tile.x}px, ${tile.y}px) translate(-50%, -50%) rotateY(${index * 18}deg) rotate(${tile.rotate}deg) scale(${tile.scale})`,
-                  opacity: tile.opacity,
-                }}
-              />
-            ))}
-          </div>
-        )}
-
-        {type === 'polyhedron' && (
-          <div className="relative h-36 w-40" style={{ transform: `scale(${scale})` }}>
-            <div className={`absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-gradient-to-br ${accent} opacity-20 blur-sm`} />
-            <span className={`${tileClass} left-[78px] top-[18px] h-12 w-14 -skew-x-12 rotate-[-9deg]`} />
-            <span className={`${tileClass} left-[42px] top-[47px] h-14 w-12 skew-y-12 rotate-[-27deg] opacity-85`} />
-            <span className={`${tileClass} left-[91px] top-[52px] h-14 w-14 skew-x-6 rotate-[18deg]`} />
-            <span className={`${tileClass} left-[67px] top-[90px] h-13 w-16 skew-x-12 rotate-[6deg] opacity-90`} />
-            <svg className="absolute inset-0 size-full" viewBox="0 0 160 144" aria-hidden="true">
-              <path d="M79 16 L122 49 L113 96 L72 126 L34 88 L41 42 Z" fill="none" stroke="rgba(255,255,255,.32)" strokeWidth="1.4" />
-              <path d="M79 16 L91 52 L122 49 M91 52 L113 96 M91 52 L41 42 M91 52 L72 126" fill="none" stroke="rgba(255,255,255,.18)" strokeWidth="1" />
-            </svg>
-          </div>
-        )}
-
-        {type === 'spiral' && (
-          <div className="relative h-40 w-48" style={{ transform: `scale(${scale})` }}>
-            <svg className="absolute inset-0 size-full" viewBox="0 0 192 160" aria-hidden="true">
-              <path d="M53 28 C145 1 164 58 93 76 C19 95 40 147 153 124" fill="none" stroke="rgba(255,255,255,.32)" strokeWidth="2" strokeLinecap="round" />
-              <path d="M53 28 C145 1 164 58 93 76 C19 95 40 147 153 124" fill="none" stroke="rgba(56,189,248,.3)" strokeWidth="8" strokeLinecap="round" />
-            </svg>
-            {spiralTiles.map((tile, index) => (
-              <span
-                key={index}
-                className={`${tileClass} left-1/2 top-1/2 h-8 w-10`}
-                style={{
-                  transform: `translate(${tile.x}px, ${tile.y}px) translate(-50%, -50%) rotate(${tile.rotate}deg) scale(${tile.scale})`,
-                  zIndex: index,
-                }}
-              />
-            ))}
-          </div>
-        )}
+        <img
+          src={logo}
+          alt={`${name} logo`}
+          className={`${compact ? 'size-[92px]' : 'h-[92%] w-[92%]'} object-contain`}
+          draggable={false}
+        />
       </div>
     </div>
   );
@@ -512,7 +427,7 @@ export default function App() {
           <div className="absolute bottom-[-10rem] right-[-8rem] h-[28rem] w-[28rem] rounded-full bg-blue-500 blur-3xl" />
         </div>
 
-        <main className="relative z-10 mx-auto flex min-h-dvh w-full flex-col px-5 py-8 sm:px-8 xl:px-[clamp(32px,4.4vw,96px)]">
+        <main className="relative z-10 mx-auto flex min-h-dvh w-full flex-col px-5 pb-5 pt-8 sm:px-8 sm:pb-8 xl:px-[clamp(32px,4.4vw,96px)] xl:pb-[clamp(32px,4.4vw,96px)]">
           <header className="mb-8 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-white/75 backdrop-blur-md">
@@ -524,7 +439,7 @@ export default function App() {
                 先选择展示样式，再按样式要求上传照片，生成可旋转、可放大的立体影像展厅。
               </p>
             </div>
-            <div className="rounded-[28px] border border-white/10 bg-white/10 px-5 py-4 text-sm text-white/70 backdrop-blur-xl shadow-2xl">
+            <div className="w-full rounded-[28px] border border-white/10 bg-white/10 px-5 py-4 text-sm text-white/70 backdrop-blur-xl shadow-2xl sm:w-[min(100%,410px)]">
               <div className="flex items-center gap-2 text-white">
                 <Shapes className="size-4" />
                 首批 4 种空间样式
@@ -533,7 +448,7 @@ export default function App() {
             </div>
           </header>
 
-          <section className="grid flex-1 grid-cols-1 justify-between gap-6 pb-8 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,410px))]">
+          <section className="grid min-h-[430px] flex-1 grid-cols-1 items-stretch justify-between gap-6 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,410px))]">
             {GALLERY_STYLES.map((style) => (
               <button
                 key={style.id}
@@ -542,10 +457,10 @@ export default function App() {
                   styleCardRefs.current[style.id] = element;
                 }}
                 onClick={(event) => handleSelectStyle(style.id, event.currentTarget)}
-                className="group flex h-full flex-col rounded-[28px] border border-white/12 bg-white/[0.08] p-4 text-left shadow-2xl backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:border-white/25 hover:bg-white/[0.12]"
+                className="group flex h-full min-h-[430px] flex-col overflow-hidden rounded-[28px] border border-white/12 bg-white/[0.08] p-4 text-left shadow-2xl backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:border-white/25 hover:bg-white/[0.12]"
               >
-                <StylePreview type={style.preview} accent={style.accent} />
-                <div className="flex flex-1 flex-col px-1 pt-5">
+                <StylePreview accent={style.accent} logo={style.logo} name={style.name} />
+                <div className="flex min-h-0 flex-1 flex-col px-1 pt-5">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h2 className="text-2xl font-semibold text-white">{style.name}</h2>
                     <span className={`h-2.5 w-12 rounded-full bg-gradient-to-r ${style.accent}`} />
@@ -649,6 +564,9 @@ export default function App() {
       </button>
       <div className={`${hasUploadedImages ? 'max-w-[960px]' : 'max-w-2xl'} w-full px-6 pb-4 pt-14 sm:pt-16 relative z-10 flex h-full flex-col min-h-0 transition-all duration-500 ease-[cubic-bezier(0.19,1,0.22,1)] ${uploadPageVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
         <div className="text-center mb-4 animate-fade-in flex shrink-0 flex-col items-center">
+          <div className="mb-3">
+            <StylePreview accent={selectedStyle.accent} logo={selectedStyle.logo} name={selectedStyle.name} compact />
+          </div>
           <span className={`mb-2 h-1.5 w-14 rounded-full bg-gradient-to-r ${selectedStyle.accent}`} />
           <h1 className="text-4xl mb-2 bg-gradient-to-r from-white via-fuchsia-100 to-blue-100 bg-clip-text text-transparent font-bold">{selectedStyle.name}</h1>
           <p className="text-white/70 text-base">{selectedStyle.name}需要上传 {selectedStyle.minPhotos}-{selectedStyle.maxPhotos} 张照片</p>
