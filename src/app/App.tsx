@@ -1,12 +1,8 @@
-import { useState, useRef, Component, ReactNode } from 'react';
+import { useState, useRef, Component, ReactNode, CSSProperties } from 'react';
 import { Upload, Camera, Trash2, ArrowLeft, X, Sparkles, Shapes } from 'lucide-react';
 import PhotoSphere3D from './components/PhotoSphere3D';
 import PhotoLayout3D, { PhotoLayoutVariant } from './components/PhotoLayout3D';
 import LoadingSpinner from './components/LoadingSpinner';
-import sphereLogo from '../assets/gallery-logos/sphere.png';
-import cylinderLogo from '../assets/gallery-logos/cylinder.png';
-import polyhedronLogo from '../assets/gallery-logos/polyhedron.png';
-import spiralLogo from '../assets/gallery-logos/spiral.png';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -34,6 +30,12 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 }
 
 const IMAGE_FILE_PATTERN = /\.(avif|bmp|gif|heic|heif|jpe?g|png|webp)$/i;
+const STYLE_CARD_RADIUS = 48;
+const STYLE_TRANSITION_MS = 620;
+const STYLE_TRANSITION_SETTLE_MS = STYLE_TRANSITION_MS + 180;
+const STYLE_UPLOAD_LOGO_SIZE = 112;
+const STYLE_UPLOAD_TITLE_WIDTH = 320;
+const STYLE_UPLOAD_TITLE_HEIGHT = 58;
 
 type GalleryStyleId = 'sphere' | 'cylinder' | 'polyhedron' | 'spiral';
 
@@ -41,9 +43,12 @@ type GalleryStyle = {
   id: GalleryStyleId;
   name: string;
   subtitle: string;
+  requirement: string;
   minPhotos: number;
   maxPhotos: number;
+  multipleOf?: number;
   accent: string;
+  surface: string;
   preview: 'orb' | 'cylinder' | 'polyhedron' | 'spiral';
   logo: string;
   variant?: PhotoLayoutVariant;
@@ -52,6 +57,10 @@ type GalleryStyle = {
 type StyleTransition = {
   style: GalleryStyle;
   from: DOMRect;
+  logoFrom: DOMRect;
+  logoTo: DOMRect;
+  titleFrom: DOMRect;
+  titleTo: DOMRect;
   expanded: boolean;
   fading: boolean;
   direction: 'enter' | 'exit';
@@ -62,43 +71,52 @@ const GALLERY_STYLES: GalleryStyle[] = [
     id: 'sphere',
     name: '照片球体',
     subtitle: '照片围成立体球面，适合大量回忆的沉浸式浏览',
+    requirement: '需要 24-120 张',
     minPhotos: 24,
     maxPhotos: 120,
     accent: 'from-violet-500 via-fuchsia-500 to-blue-500',
+    surface: 'from-violet-950 via-purple-900 to-blue-950',
     preview: 'orb',
-    logo: sphereLogo,
+    logo: '/gallery-logos/sphere.png',
   },
   {
     id: 'cylinder',
     name: '圆柱画廊',
     subtitle: '像环形展厅一样环绕观看，横向浏览节奏更稳定',
-    minPhotos: 12,
+    requirement: '需要 16 的倍数（16-80 张）',
+    minPhotos: 16,
     maxPhotos: 80,
+    multipleOf: 16,
     accent: 'from-cyan-500 via-blue-500 to-violet-500',
+    surface: 'from-cyan-950 via-blue-900 to-violet-950',
     preview: 'cylinder',
-    logo: cylinderLogo,
+    logo: '/gallery-logos/cylinder.png',
     variant: 'cylinder',
   },
   {
     id: 'polyhedron',
     name: '多面体相册',
     subtitle: '照片分布在晶体切面上，适合更利落的高级展示',
+    requirement: '需要 12-60 张',
     minPhotos: 12,
     maxPhotos: 60,
     accent: 'from-amber-400 via-rose-500 to-violet-600',
+    surface: 'from-amber-950 via-rose-900 to-violet-950',
     preview: 'polyhedron',
-    logo: polyhedronLogo,
+    logo: '/gallery-logos/polyhedron.png',
     variant: 'polyhedron',
   },
   {
     id: 'spiral',
     name: '螺旋星轨',
     subtitle: '照片沿上升轨道展开，适合时间线和成长记录',
+    requirement: '需要 20-100 张',
     minPhotos: 20,
     maxPhotos: 100,
     accent: 'from-emerald-400 via-cyan-500 to-indigo-600',
+    surface: 'from-emerald-950 via-cyan-900 to-indigo-950',
     preview: 'spiral',
-    logo: spiralLogo,
+    logo: '/gallery-logos/spiral.png',
     variant: 'spiral',
   },
 ];
@@ -106,29 +124,39 @@ const GALLERY_STYLES: GalleryStyle[] = [
 const getStyleById = (id: GalleryStyleId) => GALLERY_STYLES.find((style) => style.id === id) ?? GALLERY_STYLES[0];
 
 function StylePreview({
-  accent,
   logo,
   name,
   compact = false,
+  logoRef,
+  transitioning = false,
 }: {
-  accent: string;
   logo: string;
   name: string;
   compact?: boolean;
+  logoRef?: (element: HTMLImageElement | null) => void;
+  transitioning?: boolean;
 }) {
+  if (compact) {
+    return (
+      <img
+        ref={logoRef}
+        src={logo}
+        alt={`${name} logo`}
+        className={`size-28 object-contain ${transitioning ? 'opacity-0' : 'opacity-100'}`}
+        draggable={false}
+      />
+    );
+  }
+
   return (
-    <div
-      className={`${compact ? 'size-28 rounded-[20px]' : 'h-[clamp(190px,38%,376px)] rounded-[24px]'} relative shrink-0 overflow-hidden bg-gradient-to-br from-slate-950 via-purple-950 to-black border border-white/10 shadow-inner`}
-    >
-      <div className={`absolute inset-0 opacity-25 bg-gradient-to-br ${accent}`} />
-      <div className="absolute inset-0 flex items-center justify-center">
+    <div className={`relative flex min-h-0 w-full flex-1 items-center justify-center ${transitioning ? 'opacity-0' : 'opacity-100'}`}>
         <img
+          ref={logoRef}
           src={logo}
           alt={`${name} logo`}
-          className={`${compact ? 'size-[92px]' : 'h-[92%] w-[92%]'} object-contain`}
+          className="h-full max-h-[78%] w-full max-w-[78%] object-contain"
           draggable={false}
         />
-      </div>
     </div>
   );
 }
@@ -143,11 +171,36 @@ export default function App() {
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [uploadPageVisible, setUploadPageVisible] = useState(false);
+  const [homeTransitionCoverVisible, setHomeTransitionCoverVisible] = useState(false);
   const styleCardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const styleLogoRefs = useRef<Record<string, HTMLImageElement | null>>({});
+  const styleTitleRefs = useRef<Record<string, HTMLHeadingElement | null>>({});
+  const uploadLogoRef = useRef<HTMLImageElement | null>(null);
+  const uploadTitleRef = useRef<HTMLHeadingElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedStyle = selectedStyleId ? getStyleById(selectedStyleId) : null;
   const maxPhotos = selectedStyle?.maxPhotos ?? GALLERY_STYLES[0].maxPhotos;
   const minPhotos = selectedStyle?.minPhotos ?? GALLERY_STYLES[0].minPhotos;
+
+  const getUploadLogoRect = () => {
+    const top = window.innerWidth >= 640 ? 64 : 56;
+    return new DOMRect(
+      window.innerWidth / 2 - STYLE_UPLOAD_LOGO_SIZE / 2,
+      top,
+      STYLE_UPLOAD_LOGO_SIZE,
+      STYLE_UPLOAD_LOGO_SIZE,
+    );
+  };
+
+  const getUploadTitleRect = () => {
+    const logoRect = getUploadLogoRect();
+    return new DOMRect(
+      window.innerWidth / 2 - STYLE_UPLOAD_TITLE_WIDTH / 2,
+      logoRect.bottom + 24,
+      STYLE_UPLOAD_TITLE_WIDTH,
+      STYLE_UPLOAD_TITLE_HEIGHT,
+    );
+  };
 
   // Downscale a photo via canvas → small JPEG blob URL.
   // Cuts a 4000×3000 iPhone photo (~5–10 MB raw) down to ~80–120 KB.
@@ -233,26 +286,32 @@ export default function App() {
     setIsUploading(true);
     setUploadProgress({ done: 0, total: toProcess.length });
 
-    let done = 0;
-    const processed = await Promise.all(
-      toProcess.map(async (file) => {
-        const url = await downscaleToBlobUrl(file);
-        done += 1;
-        setUploadProgress({ done, total: toProcess.length });
-        return url;
-      }),
-    );
-    const uploadedUrls = processed.filter((url): url is string => Boolean(url));
-    const skippedCount = unsupportedCount + processed.length - uploadedUrls.length;
+    const uploadedUrls: string[] = [];
+    let skippedDuringProcessing = 0;
 
-    if (uploadedUrls.length > 0) {
-      setImages((prev) => {
-        const availableSlots = Math.max(0, maxPhotos - prev.length);
-        const urlsToAdd = uploadedUrls.slice(0, availableSlots);
-        uploadedUrls.slice(availableSlots).forEach((url) => URL.revokeObjectURL(url));
-        return [...prev, ...urlsToAdd];
-      });
+    for (const file of toProcess) {
+      try {
+        const url = await downscaleToBlobUrl(file);
+        if (url) {
+          uploadedUrls.push(url);
+        } else {
+          skippedDuringProcessing += 1;
+        }
+      } catch {
+        skippedDuringProcessing += 1;
+      } finally {
+        setUploadProgress({ done: uploadedUrls.length + skippedDuringProcessing, total: toProcess.length });
+      }
     }
+
+    const skippedCount = unsupportedCount + skippedDuringProcessing;
+
+    setImages((prev) => {
+      const availableSlots = Math.max(0, maxPhotos - prev.length);
+      const urlsToAdd = uploadedUrls.slice(0, availableSlots);
+      uploadedUrls.slice(availableSlots).forEach((url) => URL.revokeObjectURL(url));
+      return urlsToAdd.length > 0 ? [...prev, ...urlsToAdd] : prev;
+    });
 
     setIsUploading(false);
 
@@ -285,10 +344,26 @@ export default function App() {
     handleFileList(files);
   };
 
+  const getStyleSwitchError = (style: GalleryStyle) => {
+    if (images.length < style.minPhotos) {
+      return `${style.name} 至少需要 ${style.minPhotos} 张照片，当前只有 ${images.length} 张。`;
+    }
+    if (images.length > style.maxPhotos) {
+      return `${style.name} 最多支持 ${style.maxPhotos} 张照片，当前已有 ${images.length} 张。`;
+    }
+    if (style.multipleOf && images.length % style.multipleOf !== 0) {
+      const lower = Math.floor(images.length / style.multipleOf) * style.multipleOf;
+      const upper = Math.min(style.maxPhotos, lower + style.multipleOf);
+      return `${style.name} 每一圈 ${style.multipleOf} 张，照片数量需要是 ${style.multipleOf} 的倍数。当前 ${images.length} 张，可调整为 ${lower || style.multipleOf}${upper !== lower ? ` 或 ${upper}` : ''} 张。`;
+    }
+    return null;
+  };
+
   const handleGenerate = () => {
     if (!selectedStyle) return;
-    if (images.length < selectedStyle.minPhotos) {
-      alert(`${selectedStyle.name} 至少需要 ${selectedStyle.minPhotos} 张照片`);
+    const error = getStyleSwitchError(selectedStyle);
+    if (error) {
+      alert(error);
       return;
     }
     setIsLoading(true);
@@ -310,23 +385,54 @@ export default function App() {
     setIsLoading(false);
   };
 
+  const handleSwitchPreviewStyle = (styleId: GalleryStyleId) => {
+    if (styleId === selectedStyleId) return;
+    const nextStyle = getStyleById(styleId);
+    const error = getStyleSwitchError(nextStyle);
+    if (error) {
+      alert(error);
+      return;
+    }
+    setSelectedStyleId(styleId);
+  };
+
   const handleSelectStyle = (styleId: GalleryStyleId, element?: HTMLElement) => {
     const style = getStyleById(styleId);
     const from = element?.getBoundingClientRect();
     if (from) {
-      setStyleTransition({ style, from, expanded: false, fading: false, direction: 'enter' });
+      const logoFrom = styleLogoRefs.current[styleId]?.getBoundingClientRect() ?? from;
+      const titleFrom = styleTitleRefs.current[styleId]?.getBoundingClientRect() ?? from;
+      setStyleTransition({
+        style,
+        from,
+        logoFrom,
+        logoTo: getUploadLogoRect(),
+        titleFrom,
+        titleTo: getUploadTitleRect(),
+        expanded: false,
+        fading: false,
+        direction: 'enter',
+      });
       setSelectedStyleId(styleId);
       setUploadPageVisible(false);
-      window.setTimeout(() => {
-        setStyleTransition((current) => current ? { ...current, expanded: true } : current);
-        setUploadPageVisible(true);
-      }, 20);
-      window.setTimeout(() => {
-        setStyleTransition((current) => current ? { ...current, fading: true } : current);
-      }, 360);
-      window.setTimeout(() => {
-        setStyleTransition(null);
-      }, 720);
+      setHomeTransitionCoverVisible(true);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const logoTo = uploadLogoRef.current?.getBoundingClientRect() ?? getUploadLogoRect();
+          const titleTo = uploadTitleRef.current?.getBoundingClientRect() ?? getUploadTitleRect();
+          setStyleTransition((current) => current ? { ...current, logoTo, titleTo, expanded: true } : current);
+          window.setTimeout(() => {
+            setUploadPageVisible(true);
+            setHomeTransitionCoverVisible(false);
+          }, STYLE_TRANSITION_MS - 120);
+          window.setTimeout(() => {
+            setStyleTransition((current) => current ? { ...current, fading: true } : current);
+          }, STYLE_TRANSITION_MS);
+          window.setTimeout(() => {
+            setStyleTransition(null);
+          }, STYLE_TRANSITION_SETTLE_MS);
+        });
+      });
     } else {
       setSelectedStyleId(styleId);
       setUploadPageVisible(true);
@@ -340,23 +446,37 @@ export default function App() {
     if (selectedStyle) {
       const style = selectedStyle;
       const fullViewport = new DOMRect(0, 0, window.innerWidth, window.innerHeight);
-      setStyleTransition({ style, from: fullViewport, expanded: true, fading: false, direction: 'exit' });
+      const uploadLogoRect = uploadLogoRef.current?.getBoundingClientRect() ?? getUploadLogoRect();
+      const uploadTitleRect = uploadTitleRef.current?.getBoundingClientRect() ?? getUploadTitleRect();
+      setStyleTransition({
+        style,
+        from: fullViewport,
+        logoFrom: uploadLogoRect,
+        logoTo: uploadLogoRect,
+        titleFrom: uploadTitleRect,
+        titleTo: uploadTitleRect,
+        expanded: true,
+        fading: false,
+        direction: 'exit',
+      });
       setUploadPageVisible(false);
       setSelectedStyleId(null);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const targetCard = styleCardRefs.current[style.id];
           const targetRect = targetCard?.getBoundingClientRect() ?? fullViewport;
-          setStyleTransition((current) => current ? { ...current, from: targetRect, expanded: false } : current);
+          const targetLogo = styleLogoRefs.current[style.id]?.getBoundingClientRect() ?? targetRect;
+          const targetTitle = styleTitleRefs.current[style.id]?.getBoundingClientRect() ?? targetRect;
+          setStyleTransition((current) => current ? { ...current, from: targetRect, logoFrom: targetLogo, titleFrom: targetTitle, expanded: false } : current);
+          window.setTimeout(() => {
+            setStyleTransition(null);
+          }, STYLE_TRANSITION_SETTLE_MS);
         });
       });
       window.setTimeout(() => {
         images.forEach((url) => URL.revokeObjectURL(url));
         setImages([]);
       }, 220);
-      window.setTimeout(() => {
-        setStyleTransition(null);
-      }, 560);
     } else {
       images.forEach((url) => URL.revokeObjectURL(url));
       setImages([]);
@@ -387,7 +507,7 @@ export default function App() {
         top: targetTop,
         width: targetWidth,
         height: targetHeight,
-        borderRadius: 0,
+        borderRadius: styleTransition.fading ? 0 : STYLE_CARD_RADIUS,
         opacity: styleTransition.fading ? 0 : 1,
       }
       : {
@@ -395,25 +515,64 @@ export default function App() {
         top: styleTransition.from.top,
         width: styleTransition.from.width,
         height: styleTransition.from.height,
-        borderRadius: 28,
+        borderRadius: STYLE_CARD_RADIUS,
         opacity: 1,
       };
+    const currentLogoRect = styleTransition.expanded ? styleTransition.logoTo : styleTransition.logoFrom;
+    const currentTitleRect = styleTransition.expanded ? styleTransition.titleTo : styleTransition.titleFrom;
 
     return (
       <div className="pointer-events-none fixed inset-0 z-50">
         <div
-          className={`absolute overflow-hidden border border-white/20 bg-gradient-to-br from-slate-950 via-purple-950 to-black shadow-[0_32px_120px_rgba(0,0,0,0.45)] backdrop-blur-2xl transition-all duration-500 ease-[cubic-bezier(0.19,1,0.22,1)]`}
-          style={rectStyle}
+          className={`absolute overflow-hidden border border-white/20 bg-gradient-to-br ${styleTransition.style.surface} shadow-[0_32px_120px_rgba(0,0,0,0.45)] backdrop-blur-2xl transition-[left,top,width,height,opacity] duration-500 ease-[cubic-bezier(0.19,1,0.22,1)]`}
+          style={{ ...rectStyle, transitionDuration: `${STYLE_TRANSITION_MS}ms` }}
         >
-          <div className={`absolute inset-0 bg-gradient-to-br ${styleTransition.style.accent} opacity-25`} />
           <div className="absolute left-[-8rem] top-[-8rem] h-96 w-96 rounded-full bg-purple-500/40 blur-3xl" />
           <div className="absolute bottom-[-10rem] right-[-8rem] h-[28rem] w-[28rem] rounded-full bg-blue-500/35 blur-3xl" />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <p className="text-3xl font-bold text-white">{styleTransition.style.name}</p>
-              <p className="mt-2 text-sm text-white/70">{styleTransition.style.minPhotos}-{styleTransition.style.maxPhotos} 张照片</p>
-            </div>
-          </div>
+        </div>
+        <img
+          src={styleTransition.style.logo}
+          alt=""
+          aria-hidden="true"
+          className="fixed object-contain transition-all ease-[cubic-bezier(0.19,1,0.22,1)]"
+          style={{
+            left: currentLogoRect.left,
+            top: currentLogoRect.top,
+            width: currentLogoRect.width,
+            height: currentLogoRect.height,
+            opacity: 1,
+            transitionDuration: `${STYLE_TRANSITION_MS}ms`,
+          }}
+          draggable={false}
+        />
+        <div
+          className="fixed whitespace-nowrap bg-gradient-to-r from-white via-fuchsia-100 to-blue-100 bg-clip-text font-bold text-transparent transition-all ease-[cubic-bezier(0.19,1,0.22,1)]"
+          style={{
+            left: currentTitleRect.left,
+            top: currentTitleRect.top,
+            width: currentTitleRect.width,
+            height: currentTitleRect.height,
+            fontSize: styleTransition.expanded ? '2.25rem' : '1.5rem',
+            lineHeight: styleTransition.expanded ? '2.5rem' : '2rem',
+            textAlign: styleTransition.expanded ? 'center' : 'left',
+            opacity: 1,
+            transitionDuration: `${STYLE_TRANSITION_MS}ms`,
+          }}
+        >
+          {styleTransition.style.name}
+        </div>
+      </div>
+    );
+  };
+
+  const renderHomeTransitionCover = () => {
+    if (!homeTransitionCoverVisible) return null;
+
+    return (
+      <div className="pointer-events-none fixed inset-0 z-40 bg-gradient-to-br from-slate-950 via-purple-950 to-black">
+        <div className="absolute inset-0 opacity-30">
+          <div className="absolute left-[-8rem] top-[-8rem] h-96 w-96 rounded-full bg-purple-500 blur-3xl" />
+          <div className="absolute bottom-[-10rem] right-[-8rem] h-[28rem] w-[28rem] rounded-full bg-blue-500 blur-3xl" />
         </div>
       </div>
     );
@@ -421,15 +580,18 @@ export default function App() {
 
   if (!selectedStyle) {
     return (
-      <div className="min-h-dvh bg-gradient-to-br from-slate-950 via-purple-950 to-black text-white relative overflow-y-auto">
+      <div
+        className="min-h-dvh bg-gradient-to-br from-slate-950 via-purple-950 to-black text-white relative overflow-y-auto xl:h-dvh xl:overflow-hidden"
+        style={{ '--home-edge-gap': 'clamp(20px, 4.4vw, 96px)' } as CSSProperties}
+      >
         <div className="absolute inset-0 opacity-30 pointer-events-none">
           <div className="absolute left-[-8rem] top-[-8rem] h-96 w-96 rounded-full bg-purple-500 blur-3xl" />
           <div className="absolute bottom-[-10rem] right-[-8rem] h-[28rem] w-[28rem] rounded-full bg-blue-500 blur-3xl" />
         </div>
 
-        <main className="relative z-10 mx-auto flex min-h-dvh w-full flex-col px-5 pb-5 pt-8 sm:px-8 sm:pb-8 xl:px-[clamp(32px,4.4vw,96px)] xl:pb-[clamp(32px,4.4vw,96px)]">
-          <header className="mb-8 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-            <div>
+        <main className="relative z-10 mx-auto flex min-h-dvh w-full flex-col px-[var(--home-edge-gap)] pb-[var(--home-edge-gap)] pt-8 xl:h-dvh xl:min-h-0">
+          <header className="mb-8 grid grid-cols-1 items-end justify-between gap-6 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,410px))]">
+            <div className="md:col-span-1 xl:col-span-2">
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-white/75 backdrop-blur-md">
                 <Sparkles className="size-4" />
                 高级展厅式 3D 相册
@@ -439,7 +601,7 @@ export default function App() {
                 先选择展示样式，再按样式要求上传照片，生成可旋转、可放大的立体影像展厅。
               </p>
             </div>
-            <div className="w-full rounded-[28px] border border-white/10 bg-white/10 px-5 py-4 text-sm text-white/70 backdrop-blur-xl shadow-2xl sm:w-[min(100%,410px)]">
+            <div className="w-full rounded-[28px] border border-white/10 bg-white/10 px-5 py-4 text-sm text-white/70 backdrop-blur-xl shadow-2xl md:col-start-2 xl:col-start-4">
               <div className="flex items-center gap-2 text-white">
                 <Shapes className="size-4" />
                 首批 4 种空间样式
@@ -448,7 +610,7 @@ export default function App() {
             </div>
           </header>
 
-          <section className="grid min-h-[430px] flex-1 grid-cols-1 items-stretch justify-between gap-6 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,410px))]">
+          <section className="grid min-h-[430px] flex-1 grid-cols-1 items-stretch justify-between gap-6 md:grid-cols-2 xl:min-h-0 xl:grid-cols-[repeat(4,minmax(0,410px))]">
             {GALLERY_STYLES.map((style) => (
               <button
                 key={style.id}
@@ -457,21 +619,39 @@ export default function App() {
                   styleCardRefs.current[style.id] = element;
                 }}
                 onClick={(event) => handleSelectStyle(style.id, event.currentTarget)}
-                className="group flex h-full min-h-[430px] flex-col overflow-hidden rounded-[28px] border border-white/12 bg-white/[0.08] p-4 text-left shadow-2xl backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:border-white/25 hover:bg-white/[0.12]"
+                className={`group relative flex h-full min-h-[430px] flex-col overflow-hidden rounded-[48px] bg-gradient-to-br ${style.surface} p-4 text-left shadow-2xl backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 xl:min-h-0`}
               >
-                <StylePreview accent={style.accent} logo={style.logo} name={style.name} />
-                <div className="flex min-h-0 flex-1 flex-col px-1 pt-5">
+                <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+                <StylePreview
+                  logo={style.logo}
+                  name={style.name}
+                  transitioning={styleTransition?.style.id === style.id}
+                  logoRef={(element) => {
+                    styleLogoRefs.current[style.id] = element;
+                  }}
+                />
+                <div className="flex shrink-0 flex-col pt-4 xl:pt-3">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <h2 className="text-2xl font-semibold text-white">{style.name}</h2>
+                    <h2
+                      ref={(element) => {
+                        styleTitleRefs.current[style.id] = element;
+                      }}
+                      className={`text-2xl font-semibold text-white ${
+                        styleTransition?.style.id === style.id ? 'opacity-0' : 'opacity-100'
+                      }`}
+                    >
+                      {style.name}
+                    </h2>
                     <span className={`h-2.5 w-12 rounded-full bg-gradient-to-r ${style.accent}`} />
                   </div>
-                  <p className="min-h-[4.5rem] text-sm leading-6 text-white/62">{style.subtitle}</p>
-                  <div className="mt-auto flex items-center justify-between border-t border-white/10 pt-4">
-                    <span className="text-sm text-white/55">需要 {style.minPhotos}-{style.maxPhotos} 张</span>
+                  <p className="min-h-[4.5rem] text-sm leading-6 text-white/62 xl:min-h-[3.75rem] xl:leading-5">{style.subtitle}</p>
+                  <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4 xl:mt-3 xl:pt-3">
+                    <span className="text-sm text-white/55">{style.requirement}</span>
                     <span className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition-transform group-hover:scale-105">
                       选择
                     </span>
                   </div>
+                </div>
                 </div>
               </button>
             ))}
@@ -515,6 +695,33 @@ export default function App() {
             重新选样式
           </button>
         </div>
+        <div className="absolute left-3 top-16 z-10 flex max-w-[calc(100vw-1.5rem)] gap-2 overflow-x-auto rounded-[22px] border border-white/15 bg-black/35 p-2 shadow-2xl backdrop-blur-md sm:left-6 sm:top-24 sm:max-w-none sm:flex-col sm:overflow-visible">
+          {GALLERY_STYLES.map((style) => {
+            const isActive = selectedStyle.id === style.id;
+            return (
+              <button
+                key={style.id}
+                type="button"
+                onClick={() => handleSwitchPreviewStyle(style.id)}
+                aria-current={isActive ? 'true' : undefined}
+                className={`group flex h-11 shrink-0 items-center gap-2 rounded-[16px] px-2.5 text-left text-xs font-semibold text-white transition-all active:scale-95 sm:h-12 sm:w-40 ${
+                  isActive
+                    ? 'bg-white text-slate-950 shadow-xl'
+                    : 'bg-white/10 hover:bg-white/18'
+                }`}
+              >
+                <img
+                  src={style.logo}
+                  alt=""
+                  aria-hidden="true"
+                  className="size-7 shrink-0 object-contain sm:size-8"
+                  draggable={false}
+                />
+                <span className="whitespace-nowrap">{style.name}</span>
+              </button>
+            );
+          })}
+        </div>
         <div className="absolute top-3 right-3 sm:top-6 sm:right-6 flex gap-3 z-10">
           <button
             onClick={handleReset}
@@ -547,7 +754,7 @@ export default function App() {
   const uploadedFrameWidth = Math.min(Math.max(previewPanelWidth + 64, 480), 980);
   const hasUploadedImages = images.length > 0;
   return (
-    <div className="h-dvh flex justify-center bg-gradient-to-br from-slate-950 via-purple-950 to-black relative overflow-hidden">
+    <div className={`h-dvh flex justify-center bg-gradient-to-br ${selectedStyle.surface} relative overflow-hidden`}>
       <div className="absolute inset-0 opacity-30 pointer-events-none">
         <div className="absolute left-[-8rem] top-[-8rem] h-96 w-96 rounded-full bg-purple-500 blur-3xl" />
         <div className="absolute bottom-[-10rem] right-[-8rem] h-[28rem] w-[28rem] rounded-full bg-blue-500 blur-3xl" />
@@ -562,14 +769,26 @@ export default function App() {
           重选样式
         </span>
       </button>
-      <div className={`${hasUploadedImages ? 'max-w-[960px]' : 'max-w-2xl'} w-full px-6 pb-4 pt-14 sm:pt-16 relative z-10 flex h-full flex-col min-h-0 transition-all duration-500 ease-[cubic-bezier(0.19,1,0.22,1)] ${uploadPageVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
-        <div className="text-center mb-4 animate-fade-in flex shrink-0 flex-col items-center">
-          <div className="mb-3">
-            <StylePreview accent={selectedStyle.accent} logo={selectedStyle.logo} name={selectedStyle.name} compact />
+      <div className={`${hasUploadedImages ? 'max-w-[960px]' : 'max-w-2xl'} w-full px-6 pb-4 pt-14 sm:pt-16 relative z-10 flex h-full flex-col min-h-0 transition-opacity duration-500 ease-[cubic-bezier(0.19,1,0.22,1)] ${uploadPageVisible ? 'opacity-100' : 'opacity-0'}`}>
+        <div className="text-center mb-4 flex shrink-0 flex-col items-center">
+          <div className={`mb-3 ${styleTransition ? 'opacity-0' : 'opacity-100'}`}>
+            <StylePreview
+              logo={selectedStyle.logo}
+              name={selectedStyle.name}
+              compact
+              transitioning={Boolean(styleTransition)}
+              logoRef={(element) => {
+                uploadLogoRef.current = element;
+              }}
+            />
           </div>
-          <span className={`mb-2 h-1.5 w-14 rounded-full bg-gradient-to-r ${selectedStyle.accent}`} />
-          <h1 className="text-4xl mb-2 bg-gradient-to-r from-white via-fuchsia-100 to-blue-100 bg-clip-text text-transparent font-bold">{selectedStyle.name}</h1>
-          <p className="text-white/70 text-base">{selectedStyle.name}需要上传 {selectedStyle.minPhotos}-{selectedStyle.maxPhotos} 张照片</p>
+          <h1
+            ref={uploadTitleRef}
+            className={`text-4xl mb-2 bg-gradient-to-r from-white via-fuchsia-100 to-blue-100 bg-clip-text text-transparent font-bold ${styleTransition ? 'opacity-0' : 'opacity-100'}`}
+          >
+            {selectedStyle.name}
+          </h1>
+          <p className="text-white/70 text-base">{selectedStyle.name}{selectedStyle.multipleOf ? `每圈 ${selectedStyle.multipleOf} 张，需上传 ${selectedStyle.multipleOf} 的倍数` : `需要上传 ${selectedStyle.minPhotos}-${selectedStyle.maxPhotos} 张照片`}</p>
         </div>
 
         <div
@@ -633,6 +852,9 @@ export default function App() {
                     {images.length < selectedStyle.minPhotos && (
                       <span className="ml-2 text-xs text-amber-600">还需 {selectedStyle.minPhotos - images.length} 张</span>
                     )}
+                    {selectedStyle.multipleOf && images.length >= selectedStyle.minPhotos && images.length % selectedStyle.multipleOf !== 0 && (
+                      <span className="ml-2 text-xs text-amber-600">需补到 {Math.min(selectedStyle.maxPhotos, Math.ceil(images.length / selectedStyle.multipleOf) * selectedStyle.multipleOf)} 张</span>
+                    )}
                   </p>
                   <button
                     onClick={handleReset}
@@ -693,7 +915,7 @@ export default function App() {
                   </button>
                   <button
                     onClick={handleGenerate}
-                    disabled={images.length < selectedStyle.minPhotos || isUploading}
+                    disabled={images.length < selectedStyle.minPhotos || Boolean(selectedStyle.multipleOf && images.length % selectedStyle.multipleOf !== 0) || isUploading}
                     className="group relative w-full px-6 py-4 rounded-[28px] text-white text-lg font-semibold shadow-lg overflow-hidden transition-all duration-300 enabled:hover:shadow-2xl enabled:hover:shadow-purple-500/40 enabled:active:scale-[0.98] bg-gradient-to-r from-purple-600 via-fuchsia-500 to-blue-600 bg-[length:200%_100%] animate-[gradient-x_4s_ease_infinite] disabled:opacity-50 disabled:cursor-not-allowed disabled:animate-none"
                   >
                     <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out" />
@@ -722,6 +944,7 @@ export default function App() {
           <p className="text-xs text-gray-400">完美支持苹果 iPhone 相机拍摄的照片</p>
         </div>
       </div>
+      {renderHomeTransitionCover()}
       {renderStyleTransition()}
     </div>
   );

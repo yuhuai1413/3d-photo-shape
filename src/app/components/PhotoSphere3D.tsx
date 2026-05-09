@@ -307,8 +307,8 @@ export default function PhotoSphere3D({ images }: PhotoSphere3DProps) {
     const getPreviewRect = (aspectRatio = 1) => {
       const viewportWidth = renderer.domElement.clientWidth;
       const viewportHeight = renderer.domElement.clientHeight;
-      const maxWidth = Math.min(viewportWidth * 0.64, 620);
-      const maxHeight = Math.min(viewportHeight * 0.64, 620);
+      const maxWidth = Math.min(viewportWidth * 0.78, 860);
+      const maxHeight = Math.min(viewportHeight * 0.78, 860);
       const width = Math.min(maxWidth, maxHeight * aspectRatio);
       const height = width / aspectRatio;
       return {
