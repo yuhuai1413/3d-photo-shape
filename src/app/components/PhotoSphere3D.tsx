@@ -5,9 +5,10 @@ import gsap from 'gsap';
 
 interface PhotoSphere3DProps {
   images: string[];
+  cropToSquare?: boolean;
 }
 
-export default function PhotoSphere3D({ images }: PhotoSphere3DProps) {
+export default function PhotoSphere3D({ images, cropToSquare = true }: PhotoSphere3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,12 +57,43 @@ export default function PhotoSphere3D({ images }: PhotoSphere3DProps) {
     let selectedMesh: THREE.Mesh | null = null;
     let selectedTexture: THREE.Texture | null = null;
 
-    const ringCount = THREE.MathUtils.clamp(Math.round(Math.sqrt(count) * 1.08), 8, 18);
-    const latitudeSpan = 1.94;
-    const verticalGap = (radius * latitudeSpan) / Math.max(1, ringCount - 1);
-    const maxPhotoSize = THREE.MathUtils.clamp(25 / Math.sqrt(count), 1.15, 2.75);
+    const polePhotoCount = 0;
+    const ringPhotoTotal = Math.max(0, count - polePhotoCount);
+    const ringCount = THREE.MathUtils.clamp(Math.round(Math.sqrt(Math.max(ringPhotoTotal, 1)) * 0.72), 5, 10);
+    const latitudeSpan = Math.PI * 0.78;
+    const latitudeStart = latitudeSpan / 2;
+    const latitudeGap = ringCount > 1 ? latitudeSpan / (ringCount - 1) : 0;
+    const photoSize = THREE.MathUtils.clamp(30 / Math.sqrt(count), 1.78, 2.6);
+    const framePalette = [
+      ['#23d7ff', '#ff42df'],
+      ['#4a7dff', '#35f0ff'],
+      ['#ff52cf', '#8b5cff'],
+      ['#2ae6ff', '#9d5cff'],
+    ];
 
-    const makeSquareTexture = (url: string, onReady: (texture: THREE.CanvasTexture) => void) => {
+    const roundedRectPath = (
+      ctx: CanvasRenderingContext2D,
+      x: number,
+      y: number,
+      width: number,
+      height: number,
+      radiusValue: number,
+    ) => {
+      const cornerRadius = Math.min(radiusValue, width / 2, height / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + cornerRadius, y);
+      ctx.lineTo(x + width - cornerRadius, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + cornerRadius);
+      ctx.lineTo(x + width, y + height - cornerRadius);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - cornerRadius, y + height);
+      ctx.lineTo(x + cornerRadius, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - cornerRadius);
+      ctx.lineTo(x, y + cornerRadius);
+      ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
+      ctx.closePath();
+    };
+
+    const makeSquareTexture = (url: string, photoIndexForFrame: number, onReady: (texture: THREE.CanvasTexture) => void) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -73,10 +105,90 @@ export default function PhotoSphere3D({ images }: PhotoSphere3DProps) {
 
         ctx.clearRect(0, 0, size, size);
 
-        const scale = Math.min(size / img.width, size / img.height);
+        const framePadding = 34;
+        const imagePadding = 44;
+        const imageSize = size - imagePadding * 2;
+        const frameSize = size - framePadding * 2;
+        const frameRadiusValue = 34;
+        const [primaryColor, secondaryColor] = framePalette[photoIndexForFrame % framePalette.length];
+
+        const scale = cropToSquare
+          ? Math.max(imageSize / img.width, imageSize / img.height)
+          : Math.min(imageSize / img.width, imageSize / img.height);
         const drawWidth = img.width * scale;
         const drawHeight = img.height * scale;
-        ctx.drawImage(img, (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
+
+        ctx.save();
+        roundedRectPath(ctx, imagePadding, imagePadding, imageSize, imageSize, 24);
+        ctx.clip();
+        ctx.drawImage(
+          img,
+          imagePadding + (imageSize - drawWidth) / 2,
+          imagePadding + (imageSize - drawHeight) / 2,
+          drawWidth,
+          drawHeight,
+        );
+        ctx.restore();
+
+        const strokeGradient = ctx.createLinearGradient(framePadding, framePadding, size - framePadding, size - framePadding);
+        strokeGradient.addColorStop(0, primaryColor);
+        strokeGradient.addColorStop(0.48, '#faf7ff');
+        strokeGradient.addColorStop(1, secondaryColor);
+
+        ctx.save();
+        roundedRectPath(ctx, framePadding, framePadding, frameSize, frameSize, frameRadiusValue);
+        ctx.strokeStyle = strokeGradient;
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = primaryColor;
+        ctx.shadowBlur = 34;
+        ctx.lineWidth = 20;
+        ctx.globalAlpha = 0.48;
+        ctx.stroke();
+        ctx.shadowColor = secondaryColor;
+        ctx.shadowBlur = 22;
+        ctx.lineWidth = 11;
+        ctx.globalAlpha = 0.58;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = 5;
+        ctx.stroke();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255,255,255,0.88)';
+        ctx.stroke();
+        ctx.restore();
+
+        const capLength = 58;
+        const capInset = 13;
+        const capPositions = [
+          { x1: framePadding + capInset, y1: framePadding, x2: framePadding + capInset + capLength, y2: framePadding, color: primaryColor },
+          { x1: size - framePadding - capInset - capLength, y1: framePadding, x2: size - framePadding - capInset, y2: framePadding, color: secondaryColor },
+          { x1: framePadding + capInset, y1: size - framePadding, x2: framePadding + capInset + capLength, y2: size - framePadding, color: secondaryColor },
+          { x1: size - framePadding - capInset - capLength, y1: size - framePadding, x2: size - framePadding - capInset, y2: size - framePadding, color: primaryColor },
+          { x1: framePadding, y1: framePadding + capInset, x2: framePadding, y2: framePadding + capInset + capLength, color: secondaryColor },
+          { x1: size - framePadding, y1: framePadding + capInset, x2: size - framePadding, y2: framePadding + capInset + capLength, color: primaryColor },
+          { x1: framePadding, y1: size - framePadding - capInset - capLength, x2: framePadding, y2: size - framePadding - capInset, color: primaryColor },
+          { x1: size - framePadding, y1: size - framePadding - capInset - capLength, x2: size - framePadding, y2: size - framePadding - capInset, color: secondaryColor },
+        ];
+
+        ctx.save();
+        ctx.lineCap = 'round';
+        capPositions.forEach((cap) => {
+          ctx.strokeStyle = cap.color;
+          ctx.shadowColor = cap.color;
+          ctx.shadowBlur = 18;
+          ctx.lineWidth = 8;
+          ctx.globalAlpha = 0.72;
+          ctx.beginPath();
+          ctx.moveTo(cap.x1, cap.y1);
+          ctx.lineTo(cap.x2, cap.y2);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.lineWidth = 3;
+          ctx.globalAlpha = 1;
+          ctx.stroke();
+        });
+        ctx.restore();
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.colorSpace = THREE.SRGBColorSpace;
@@ -157,77 +269,115 @@ export default function PhotoSphere3D({ images }: PhotoSphere3DProps) {
       return geometry;
     };
     const rings = Array.from({ length: ringCount }, (_, ring) => {
-      const normalized = ringCount === 1 ? 0.5 : ring / (ringCount - 1);
-      const lat = latitudeSpan / 2 - normalized * latitudeSpan;
-      const radiusRatio = Math.sqrt(Math.max(0.03, 1 - lat * lat));
+      const centerLat = latitudeStart - latitudeGap * ring;
+      const radiusRatio = Math.max(0.12, Math.cos(centerLat));
+      const ringRadius = radiusRatio * radius;
+      const capacity = Math.max(1, Math.floor((Math.PI * 2 * ringRadius) / (photoSize * 1.08)));
       return {
-        lat,
+        centerLat,
         radiusRatio,
-        count: Math.max(3, Math.round(radiusRatio * count * 1.18 / ringCount)),
+        capacity,
+        weight: capacity,
+        count: 0,
+        longitudeOffset: 0,
       };
     });
 
-    let plannedCount = rings.reduce((sum, ring) => sum + ring.count, 0);
-    while (plannedCount < count) {
-      const target = rings.reduce((best, ring, index) => (
-        ring.radiusRatio > rings[best].radiusRatio ? index : best
-      ), 0);
-      rings[target].count += 1;
-      plannedCount += 1;
-    }
-    while (plannedCount > count) {
-      const target = rings.reduce((best, ring, index) => (
-        ring.count > rings[best].count ? index : best
-      ), 0);
-      if (rings[target].count <= 3) break;
-      rings[target].count -= 1;
-      plannedCount -= 1;
+    let remainingRingPhotos = ringPhotoTotal;
+    if (remainingRingPhotos >= ringCount) {
+      rings.forEach((ring) => {
+        if (remainingRingPhotos > 0 && ring.capacity > 0) {
+          ring.count = 1;
+          remainingRingPhotos -= 1;
+        }
+      });
     }
 
-    let photoIndex = 0;
+    while (remainingRingPhotos > 0) {
+      const candidates = rings
+        .map((ring, index) => ({ ring, index }))
+        .filter(({ ring }) => ring.count < ring.capacity);
+      if (candidates.length === 0) break;
+
+      const target = candidates.reduce((best, current) => {
+        const currentFill = current.ring.count / current.ring.weight;
+        const bestFill = best.ring.count / best.ring.weight;
+        if (currentFill !== bestFill) return currentFill < bestFill ? current : best;
+        const currentSymmetry = Math.abs(current.index - (ringCount - 1) / 2);
+        const bestSymmetry = Math.abs(best.index - (ringCount - 1) / 2);
+        return currentSymmetry < bestSymmetry ? current : best;
+      });
+
+      const mirrorIndex = ringCount - 1 - target.index;
+      const mirror = rings[mirrorIndex];
+      const canAddMirror = mirrorIndex !== target.index && remainingRingPhotos >= 2 && mirror.count < mirror.capacity;
+
+      target.ring.count += 1;
+      remainingRingPhotos -= 1;
+
+      if (canAddMirror) {
+        mirror.count += 1;
+        remainingRingPhotos -= 1;
+      }
+    }
+
     rings.forEach((ring, ringIndex) => {
+      if (ring.count <= 0) return;
+
+      const previousRing = rings[ringIndex - 1];
+      if (!previousRing || previousRing.count <= 0) {
+        ring.longitudeOffset = 0;
+        return;
+      }
+
+      const currentCellAngle = (Math.PI * 2) / ring.count;
+      ring.longitudeOffset = previousRing.longitudeOffset + currentCellAngle * 0.5;
+    });
+
+    let photoIndex = 0;
+    const addPhotoMesh = (geometry: THREE.BufferGeometry, currentIndex: number) => {
+      const mat = createPhotoMaterial(THREE.FrontSide);
+      const backMat = createPhotoMaterial(THREE.BackSide);
+      materials.push(mat, backMat);
+
+      const mesh = new THREE.Mesh(geometry, mat);
+      mesh.userData.imageIndex = currentIndex;
+      const backMesh = new THREE.Mesh(createBackGeometry(geometry), backMat);
+      backMesh.userData.imageIndex = currentIndex;
+
+      meshes.push(mesh);
+      backMeshes.push(backMesh);
+      group.add(mesh);
+      group.add(backMesh);
+      originalScales.push(mesh.scale.clone());
+      mesh.userData.frontMesh = mesh;
+      mesh.userData.backMesh = backMesh;
+      backMesh.userData.frontMesh = mesh;
+
+      makeSquareTexture(images[currentIndex], currentIndex, (texture) => {
+        textures.push(texture);
+        mat.map = texture;
+        mat.color.set(0xffffff);
+        mat.needsUpdate = true;
+        backMat.map = texture;
+        backMat.color.set(0xffffff);
+        backMat.needsUpdate = true;
+        mesh.userData.texture = texture;
+        backMesh.userData.texture = texture;
+      });
+    };
+
+    rings.forEach((ring) => {
       for (let indexInRing = 0; indexInRing < ring.count && photoIndex < count; indexInRing++) {
-        const longitude = ((indexInRing + (ringIndex % 2) * 0.5) / ring.count) * Math.PI * 2;
+        const longitude = (indexInRing / ring.count) * Math.PI * 2 + ring.longitudeOffset;
         const ringRadius = ring.radiusRatio * radius;
-        const circumference = Math.PI * 2 * ringRadius;
-        const slotWidth = circumference / ring.count;
-        const photoSize = Math.min(maxPhotoSize, slotWidth * 0.9, verticalGap * 0.9);
-        const centerLat = Math.asin(ring.lat);
-        const angularWidth = Math.min((Math.PI * 2 / ring.count) * 0.9, photoSize / Math.max(ringRadius, 0.8));
+        const centerLat = ring.centerLat;
+        const angularWidth = Math.min((Math.PI * 2 / ring.count) * 0.92, (photoSize * 1.08) / Math.max(ringRadius, 0.8));
         const angularHeight = photoSize / radius;
 
         const geometry = createCurvedPhotoGeometry(centerLat, longitude, angularWidth, angularHeight);
         const currentIndex = photoIndex;
-
-        const mat = createPhotoMaterial(THREE.FrontSide);
-        const backMat = createPhotoMaterial(THREE.BackSide);
-        materials.push(mat, backMat);
-
-        const mesh = new THREE.Mesh(geometry, mat);
-        mesh.userData.imageIndex = currentIndex;
-        const backMesh = new THREE.Mesh(createBackGeometry(geometry), backMat);
-        backMesh.userData.imageIndex = currentIndex;
-
-        meshes.push(mesh);
-        backMeshes.push(backMesh);
-        group.add(mesh);
-        group.add(backMesh);
-        originalScales.push(mesh.scale.clone());
-        mesh.userData.frontMesh = mesh;
-        mesh.userData.backMesh = backMesh;
-        backMesh.userData.frontMesh = mesh;
-
-        makeSquareTexture(images[photoIndex], (texture) => {
-          textures.push(texture);
-          mat.map = texture;
-          mat.color.set(0xffffff);
-          mat.needsUpdate = true;
-          backMat.map = texture;
-          backMat.color.set(0xffffff);
-          backMat.needsUpdate = true;
-          mesh.userData.texture = texture;
-          backMesh.userData.texture = texture;
-        });
+        addPhotoMesh(geometry, currentIndex);
 
         photoIndex++;
       }
@@ -516,9 +666,27 @@ export default function PhotoSphere3D({ images }: PhotoSphere3DProps) {
     // Raycaster for click detection
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
+    const pointerStart = { x: 0, y: 0 };
+    let pointerMoved = false;
+
+    const onPointerDown = (event: PointerEvent) => {
+      pointerStart.x = event.clientX;
+      pointerStart.y = event.clientY;
+      pointerMoved = false;
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (pointerMoved) return;
+      const distance = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
+      if (distance > 6) pointerMoved = true;
+    };
 
     // Click handler with Q-bouncy animation
     const onClick = (event: MouseEvent) => {
+      if (pointerMoved) {
+        pointerMoved = false;
+        return;
+      }
       // Calculate mouse position in normalized device coordinates (-1 to +1)
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -548,6 +716,8 @@ export default function PhotoSphere3D({ images }: PhotoSphere3DProps) {
       }
     };
 
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('click', onClick);
 
     let raf = 0;
@@ -578,6 +748,8 @@ export default function PhotoSphere3D({ images }: PhotoSphere3DProps) {
       cancelled = true;
       cancelAnimationFrame(raf);
       ro.disconnect();
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('click', onClick);
       controls.dispose();
       previewAnimation?.cancel();
@@ -597,7 +769,7 @@ export default function PhotoSphere3D({ images }: PhotoSphere3DProps) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [images]);
+  }, [images, cropToSquare]);
 
   return <div ref={containerRef} className="absolute inset-0" style={{ touchAction: 'none' }} />;
 }

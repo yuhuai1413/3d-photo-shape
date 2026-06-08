@@ -1,5 +1,5 @@
-import { useState, useRef, Component, ReactNode, CSSProperties } from 'react';
-import { Upload, Camera, Trash2, ArrowLeft, X, Sparkles, Shapes } from 'lucide-react';
+import { useState, useRef, useEffect, Component, ReactNode, CSSProperties } from 'react';
+import { Upload, Camera, Trash2, ArrowLeft, X, Sparkles, Shapes, Gamepad2, Smartphone, Crop, Download } from 'lucide-react';
 import PhotoSphere3D from './components/PhotoSphere3D';
 import PhotoLayout3D, { PhotoLayoutVariant } from './components/PhotoLayout3D';
 import LoadingSpinner from './components/LoadingSpinner';
@@ -36,6 +36,8 @@ const STYLE_TRANSITION_SETTLE_MS = STYLE_TRANSITION_MS + 180;
 const STYLE_UPLOAD_LOGO_SIZE = 112;
 const STYLE_UPLOAD_TITLE_WIDTH = 320;
 const STYLE_UPLOAD_TITLE_HEIGHT = 58;
+const GALLERY_MIN_PHOTOS = 24;
+const GALLERY_MAX_PHOTOS = 180;
 
 type GalleryStyleId = 'sphere' | 'cylinder' | 'polyhedron' | 'spiral';
 
@@ -71,9 +73,9 @@ const GALLERY_STYLES: GalleryStyle[] = [
     id: 'sphere',
     name: '照片球体',
     subtitle: '照片围成立体球面，适合大量回忆的沉浸式浏览',
-    requirement: '需要 24-120 张',
-    minPhotos: 24,
-    maxPhotos: 120,
+    requirement: `需要 ${GALLERY_MIN_PHOTOS}-${GALLERY_MAX_PHOTOS} 张`,
+    minPhotos: GALLERY_MIN_PHOTOS,
+    maxPhotos: GALLERY_MAX_PHOTOS,
     accent: 'from-violet-500 via-fuchsia-500 to-blue-500',
     surface: 'from-violet-950 via-purple-900 to-blue-950',
     preview: 'orb',
@@ -83,10 +85,9 @@ const GALLERY_STYLES: GalleryStyle[] = [
     id: 'cylinder',
     name: '圆柱画廊',
     subtitle: '像环形展厅一样环绕观看，横向浏览节奏更稳定',
-    requirement: '需要 16 的倍数（16-80 张）',
-    minPhotos: 16,
-    maxPhotos: 80,
-    multipleOf: 16,
+    requirement: `需要 ${GALLERY_MIN_PHOTOS}-${GALLERY_MAX_PHOTOS} 张`,
+    minPhotos: GALLERY_MIN_PHOTOS,
+    maxPhotos: GALLERY_MAX_PHOTOS,
     accent: 'from-cyan-500 via-blue-500 to-violet-500',
     surface: 'from-cyan-950 via-blue-900 to-violet-950',
     preview: 'cylinder',
@@ -97,9 +98,9 @@ const GALLERY_STYLES: GalleryStyle[] = [
     id: 'polyhedron',
     name: '多面体相册',
     subtitle: '照片分布在晶体切面上，适合更利落的高级展示',
-    requirement: '需要 12-60 张',
-    minPhotos: 12,
-    maxPhotos: 60,
+    requirement: `需要 ${GALLERY_MIN_PHOTOS}-${GALLERY_MAX_PHOTOS} 张`,
+    minPhotos: GALLERY_MIN_PHOTOS,
+    maxPhotos: GALLERY_MAX_PHOTOS,
     accent: 'from-amber-400 via-rose-500 to-violet-600',
     surface: 'from-amber-950 via-rose-900 to-violet-950',
     preview: 'polyhedron',
@@ -110,9 +111,9 @@ const GALLERY_STYLES: GalleryStyle[] = [
     id: 'spiral',
     name: '螺旋星轨',
     subtitle: '照片沿上升轨道展开，适合时间线和成长记录',
-    requirement: '需要 20-100 张',
-    minPhotos: 20,
-    maxPhotos: 100,
+    requirement: `需要 ${GALLERY_MIN_PHOTOS}-${GALLERY_MAX_PHOTOS} 张`,
+    minPhotos: GALLERY_MIN_PHOTOS,
+    maxPhotos: GALLERY_MAX_PHOTOS,
     accent: 'from-emerald-400 via-cyan-500 to-indigo-600',
     surface: 'from-emerald-950 via-cyan-900 to-indigo-950',
     preview: 'spiral',
@@ -172,15 +173,38 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadPageVisible, setUploadPageVisible] = useState(false);
   const [homeTransitionCoverVisible, setHomeTransitionCoverVisible] = useState(false);
+  const [previewSwitchingStyleId, setPreviewSwitchingStyleId] = useState<GalleryStyleId | null>(null);
+  const [cropPreviewPhotos, setCropPreviewPhotos] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const styleCardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const styleLogoRefs = useRef<Record<string, HTMLImageElement | null>>({});
   const styleTitleRefs = useRef<Record<string, HTMLHeadingElement | null>>({});
   const uploadLogoRef = useRef<HTMLImageElement | null>(null);
   const uploadTitleRef = useRef<HTMLHeadingElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewSwitchStartTimerRef = useRef<number | null>(null);
+  const previewSwitchEndTimerRef = useRef<number | null>(null);
   const selectedStyle = selectedStyleId ? getStyleById(selectedStyleId) : null;
+  const previewSwitchingStyle = previewSwitchingStyleId ? getStyleById(previewSwitchingStyleId) : null;
   const maxPhotos = selectedStyle?.maxPhotos ?? GALLERY_STYLES[0].maxPhotos;
   const minPhotos = selectedStyle?.minPhotos ?? GALLERY_STYLES[0].minPhotos;
+
+  const clearPreviewSwitchTimers = () => {
+    if (previewSwitchStartTimerRef.current) {
+      window.clearTimeout(previewSwitchStartTimerRef.current);
+      previewSwitchStartTimerRef.current = null;
+    }
+    if (previewSwitchEndTimerRef.current) {
+      window.clearTimeout(previewSwitchEndTimerRef.current);
+      previewSwitchEndTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      clearPreviewSwitchTimers();
+    };
+  }, []);
 
   const getUploadLogoRect = () => {
     const top = window.innerWidth >= 640 ? 64 : 56;
@@ -257,6 +281,500 @@ export default function App() {
       };
       img.src = url;
     });
+
+  const blobUrlToDataUrl = async (url: string) => {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  const buildStandaloneGalleryHtml = ({
+    title,
+    styleId,
+    styleName,
+    photoDataUrls,
+    cropToSquare,
+  }: {
+    title: string;
+    styleId: GalleryStyleId;
+    styleName: string;
+    photoDataUrls: string[];
+    cropToSquare: boolean;
+  }) => {
+    const payload = JSON.stringify({
+      title,
+      styleId,
+      styleName,
+      photos: photoDataUrls,
+      cropToSquare,
+    }).replace(/</g, '\\u003c');
+
+    return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${title}</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #05030b; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { background: radial-gradient(circle at 20% 15%, rgba(168, 85, 247, .34), transparent 30%), radial-gradient(circle at 82% 78%, rgba(59, 130, 246, .3), transparent 34%), linear-gradient(135deg, #05030b 0%, #1b1034 52%, #020617 100%); }
+    .stage { position: fixed; inset: 0; perspective: 1350px; cursor: grab; touch-action: none; overflow: hidden; }
+    .stage:active { cursor: grabbing; }
+    .gallery { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; }
+    .card { position: absolute; left: 0; top: 0; width: var(--w); height: var(--h); margin-left: calc(var(--w) / -2); margin-top: calc(var(--h) / -2); padding: 7px; overflow: hidden; border: 0; border-radius: 16px; background: linear-gradient(135deg, var(--c1), rgba(255,255,255,.94) 48%, var(--c2)); box-shadow: 0 0 10px var(--c1), 0 0 20px color-mix(in srgb, var(--c2) 76%, transparent), 0 18px 48px rgba(0,0,0,.42); transform-style: preserve-3d; backface-visibility: visible; cursor: pointer; appearance: none; }
+    .card::before { content: ""; position: absolute; inset: 2px; border-radius: 14px; border: 2px solid rgba(255,255,255,.78); pointer-events: none; }
+    .card::after { content: ""; position: absolute; inset: 0; border-radius: 16px; box-shadow: inset 0 0 12px rgba(255,255,255,.52), inset 0 0 24px var(--c1); pointer-events: none; }
+    .card img { display: block; width: 100%; height: 100%; object-fit: var(--fit); user-select: none; -webkit-user-drag: none; border-radius: 10px; background: rgba(255,255,255,.06); pointer-events: none; }
+    .topbar, .hint { position: fixed; z-index: 5; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.38); backdrop-filter: blur(16px); box-shadow: 0 18px 48px rgba(0,0,0,.25); }
+    .topbar { left: 20px; top: 20px; display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 40px); padding: 12px 16px; border-radius: 999px; }
+    .title { font-weight: 800; white-space: nowrap; }
+    .meta { color: rgba(255,255,255,.66); font-size: 13px; white-space: nowrap; }
+    .hint { right: 20px; bottom: 20px; padding: 10px 14px; border-radius: 999px; color: rgba(255,255,255,.76); font-size: 13px; }
+    .lightbox { position: fixed; inset: 0; z-index: 10; display: block; opacity: 0; pointer-events: none; background: transparent; transition: opacity 180ms ease; }
+    .lightbox.open { opacity: 1; pointer-events: auto; }
+    .lightbox img { position: fixed; display: block; max-width: none; max-height: none; object-fit: contain; border-radius: 18px; box-shadow: 0 28px 90px rgba(0,0,0,.55); transform-origin: center center; will-change: left, top, width, height, border-radius; pointer-events: none; }
+    .close { position: fixed; right: 20px; top: 20px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255,255,255,.9); color: #111827; font-size: 24px; cursor: pointer; opacity: 0; transition: opacity 160ms ease; }
+    .lightbox.open .close { opacity: 1; }
+    @media (max-width: 720px) {
+      .topbar { left: 12px; top: 12px; padding: 10px 12px; gap: 8px; }
+      .title { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; }
+      .meta, .hint { font-size: 12px; }
+      .hint { right: 12px; bottom: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="title"></div>
+    <div class="meta"></div>
+  </div>
+  <div class="stage" aria-label="3D 相册预览">
+    <div class="gallery"></div>
+  </div>
+  <div class="hint">拖动旋转 · 滚轮/双指缩放 · 点击照片放大</div>
+  <div class="lightbox" role="dialog" aria-modal="true">
+    <button class="close" type="button" aria-label="关闭">×</button>
+    <img alt="" />
+  </div>
+  <script>
+    const data = ${payload};
+    const gallery = document.querySelector('.gallery');
+    const stage = document.querySelector('.stage');
+    const title = document.querySelector('.title');
+    const meta = document.querySelector('.meta');
+    const lightbox = document.querySelector('.lightbox');
+    const lightboxImage = lightbox.querySelector('img');
+    const closeButton = lightbox.querySelector('.close');
+    const photos = data.photos;
+    const fit = data.cropToSquare ? 'cover' : 'contain';
+    const photoAspectRatio = 1.08;
+    const pxScale = 52;
+    const frameColors = [['#23d7ff', '#ff42df'], ['#4a7dff', '#35f0ff'], ['#ff52cf', '#8b5cff'], ['#2ae6ff', '#9d5cff']];
+    let rotationX = data.styleId === 'spiral' ? -10 : -7;
+    let rotationY = data.styleId === 'polyhedron' ? -18 : 0;
+    let targetRotationX = rotationX;
+    let targetRotationY = rotationY;
+    let zoom = Math.min(window.innerWidth, window.innerHeight) < 720 ? .46 : .9;
+    let targetZoom = zoom;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let lastX = 0;
+    let lastY = 0;
+    let moved = false;
+    let activeCard = null;
+    let lightboxIsOpen = false;
+    let lightboxTransitionTimer = 0;
+    const activePointers = new Map();
+    let isPinching = false;
+    let pinchStartDistance = 0;
+    let pinchStartZoom = 1;
+
+    title.textContent = data.styleName;
+    meta.textContent = photos.length + ' 张照片';
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function getDefaultPhotoSize(total) {
+      return clamp(30 / Math.sqrt(Math.max(total, 1)), 1.78, 2.6) * pxScale;
+    }
+
+    function getRingColumnCount(total) {
+      const targetRows = total > 140 ? 5 : total > 84 ? 4 : 3;
+      return clamp(Math.ceil(total / targetRows), 16, 36);
+    }
+
+    function buildSpherePlacements(total) {
+      const radius = 11 * pxScale;
+      const photoSize = getDefaultPhotoSize(total);
+      const ringCount = clamp(Math.round(Math.sqrt(Math.max(total, 1)) * .72), 5, 10);
+      const latitudeSpan = Math.PI * .78;
+      const latitudeStart = latitudeSpan / 2;
+      const latitudeGap = ringCount > 1 ? latitudeSpan / (ringCount - 1) : 0;
+      const rings = Array.from({ length: ringCount }, (_, ring) => {
+        const centerLat = latitudeStart - latitudeGap * ring;
+        const radiusRatio = Math.max(.12, Math.cos(centerLat));
+        const ringRadius = radiusRatio * radius;
+        return {
+          centerLat,
+          radiusRatio,
+          capacity: Math.max(1, Math.floor((Math.PI * 2 * ringRadius) / (photoSize * 1.08))),
+          weight: Math.max(1, Math.floor((Math.PI * 2 * ringRadius) / (photoSize * 1.08))),
+          count: 0,
+          longitudeOffset: 0,
+        };
+      });
+
+      let remaining = total;
+      if (remaining >= ringCount) {
+        rings.forEach((ring) => {
+          if (remaining > 0) {
+            ring.count = 1;
+            remaining -= 1;
+          }
+        });
+      }
+
+      while (remaining > 0) {
+        const candidates = rings.map((ring, index) => ({ ring, index })).filter(({ ring }) => ring.count < ring.capacity);
+        if (candidates.length === 0) break;
+        const target = candidates.reduce((best, current) => {
+          const currentFill = current.ring.count / current.ring.weight;
+          const bestFill = best.ring.count / best.ring.weight;
+          if (currentFill !== bestFill) return currentFill < bestFill ? current : best;
+          return Math.abs(current.index - (ringCount - 1) / 2) < Math.abs(best.index - (ringCount - 1) / 2) ? current : best;
+        });
+        const mirrorIndex = ringCount - 1 - target.index;
+        const mirror = rings[mirrorIndex];
+        const canAddMirror = mirrorIndex !== target.index && remaining >= 2 && mirror.count < mirror.capacity;
+        target.ring.count += 1;
+        remaining -= 1;
+        if (canAddMirror) {
+          mirror.count += 1;
+          remaining -= 1;
+        }
+      }
+
+      rings.forEach((ring, ringIndex) => {
+        if (ring.count <= 0) return;
+        const previousRing = rings[ringIndex - 1];
+        ring.longitudeOffset = previousRing && previousRing.count > 0
+          ? previousRing.longitudeOffset + (Math.PI * 2 / ring.count) * .5
+          : 0;
+      });
+
+      const placements = [];
+      rings.forEach((ring) => {
+        for (let indexInRing = 0; indexInRing < ring.count && placements.length < total; indexInRing += 1) {
+          const lon = (indexInRing / ring.count) * Math.PI * 2 + ring.longitudeOffset;
+          const cosLat = Math.cos(ring.centerLat);
+          const x = Math.cos(lon) * cosLat * radius;
+          const y = Math.sin(ring.centerLat) * radius;
+          const z = Math.sin(lon) * cosLat * radius;
+          const ringRadius = ring.radiusRatio * radius;
+          const cellAngle = (Math.PI * 2) / ring.count;
+          const visualWidth = Math.min(cellAngle * ringRadius * .92, photoSize * photoAspectRatio);
+          placements.push({
+            x,
+            y,
+            z,
+            rx: -ring.centerLat,
+            ry: Math.PI / 2 - lon,
+            rz: 0,
+            w: visualWidth,
+            h: photoSize,
+          });
+        }
+      });
+      return placements;
+    }
+
+    function getPlacement(index, total) {
+      const mode = data.styleId;
+      if (mode === 'sphere') return buildSpherePlacements(total)[index];
+      if (mode === 'cylinder') {
+        const photoSizeDefault = getDefaultPhotoSize(total);
+        const columns = getRingColumnCount(total);
+        const rows = Math.ceil(total / columns);
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const angle = (column / columns) * Math.PI * 2;
+        const radius = clamp(columns * .38, 10.8, 14.2) * pxScale;
+        const yGap = clamp(10.6 / Math.max(1, rows - 1), 2.25, 2.95) * pxScale;
+        const slotWidth = (Math.PI * 2 * radius) / columns;
+        const photoSize = Math.min((slotWidth * .9) / photoAspectRatio, yGap * .98, photoSizeDefault);
+        return { x: Math.sin(angle) * radius, y: (rows - 1) * yGap * .5 - row * yGap, z: Math.cos(angle) * radius, rx: 0, ry: angle, rz: 0, w: photoSize * photoAspectRatio, h: photoSize };
+      }
+      if (mode === 'spiral') {
+        const photoSizeDefault = getDefaultPhotoSize(total);
+        const progress = total === 1 ? .5 : index / (total - 1);
+        const turns = clamp(total / 34, 2.8, 4.8);
+        const angle = progress * Math.PI * 2 * turns;
+        const radius = 13.4 * pxScale;
+        const ySpan = Math.max((photoSizeDefault / pxScale) * turns * 1.18, clamp(total * .062, 8.4, 12.8)) * pxScale;
+        const photosPerTurn = Math.max(1, total / turns);
+        const slotWidth = (Math.PI * 2 * radius) / photosPerTurn;
+        const photoSize = Math.min((slotWidth * .96) / photoAspectRatio, photoSizeDefault);
+        return { x: Math.sin(angle) * radius, y: (.5 - progress) * ySpan, z: Math.cos(angle) * radius, rx: 0, ry: angle, rz: 0, w: photoSize * photoAspectRatio, h: photoSize };
+      }
+      const photoSizeDefault = getDefaultPhotoSize(total);
+      const faceIndex = index % 6;
+      const facePhotoCount = Math.floor((total + 5 - faceIndex) / 6);
+      const indexInFace = Math.floor(index / 6);
+      const columns = Math.min(5, Math.ceil(Math.sqrt(facePhotoCount)));
+      const rows = Math.ceil(facePhotoCount / columns);
+      const row = Math.floor(indexInFace / columns);
+      const column = indexInFace % columns;
+      const cubeHalfSize = 7.4 * pxScale;
+      const cellWidth = (cubeHalfSize * 2) / columns;
+      const cellHeight = (cubeHalfSize * 2) / rows;
+      const photoSize = Math.min((cellWidth * .94) / photoAspectRatio, cellHeight * .94, photoSizeDefault);
+      const offsetX = -cubeHalfSize + cellWidth * (column + .5);
+      const offsetY = cubeHalfSize - cellHeight * (row + .5);
+      const out = 4;
+      const faces = [
+        { x: offsetX, y: offsetY, z: cubeHalfSize + out, rx: 0, ry: 0, rz: 0 },
+        { x: -offsetX, y: offsetY, z: -cubeHalfSize - out, rx: 0, ry: Math.PI, rz: 0 },
+        { x: cubeHalfSize + out, y: offsetY, z: -offsetX, rx: 0, ry: Math.PI / 2, rz: 0 },
+        { x: -cubeHalfSize - out, y: offsetY, z: offsetX, rx: 0, ry: -Math.PI / 2, rz: 0 },
+        { x: offsetX, y: cubeHalfSize + out, z: -offsetY, rx: -Math.PI / 2, ry: 0, rz: 0 },
+        { x: offsetX, y: -cubeHalfSize - out, z: offsetY, rx: Math.PI / 2, ry: 0, rz: 0 },
+      ];
+      return { ...faces[faceIndex], w: photoSize * photoAspectRatio, h: photoSize };
+    }
+
+    function renderCards() {
+      gallery.innerHTML = '';
+      const placements = data.styleId === 'sphere' ? buildSpherePlacements(photos.length) : null;
+      photos.forEach((src, index) => {
+        const card = document.createElement('button');
+        const img = document.createElement('img');
+        const p = placements ? placements[index] : getPlacement(index, photos.length);
+        const colors = frameColors[index % frameColors.length];
+        card.className = 'card';
+        card.type = 'button';
+        card.dataset.index = String(index);
+        card.style.setProperty('--w', p.w + 'px');
+        card.style.setProperty('--h', p.h + 'px');
+        card.style.setProperty('--fit', fit);
+        card.style.setProperty('--c1', colors[0]);
+        card.style.setProperty('--c2', colors[1]);
+        card.style.transform = 'translate3d(' + p.x + 'px,' + p.y + 'px,' + p.z + 'px) rotateY(' + p.ry + 'rad) rotateX(' + p.rx + 'rad) rotateZ(' + p.rz + 'rad)';
+        img.src = src;
+        img.alt = '照片 ' + (index + 1);
+        card.appendChild(img);
+        card.addEventListener('click', (event) => {
+          event.preventDefault();
+        });
+        gallery.appendChild(card);
+      });
+    }
+
+    function updateTransform() {
+      gallery.style.transform = 'translate(-50%, -50%) scale(' + zoom + ') rotateX(' + rotationX + 'deg) rotateY(' + rotationY + 'deg)';
+    }
+
+    function animate() {
+      if (!isDragging && !isPinching) targetRotationY += .035;
+      rotationX += (targetRotationX - rotationX) * .18;
+      rotationY += (targetRotationY - rotationY) * .18;
+      zoom += (targetZoom - zoom) * .2;
+      updateTransform();
+      requestAnimationFrame(animate);
+    }
+
+    function getPreviewRect(aspectRatio) {
+      const maxWidth = Math.min(window.innerWidth * .78, 860);
+      const maxHeight = Math.min(window.innerHeight * .78, 860);
+      const width = Math.min(maxWidth, maxHeight * aspectRatio);
+      const height = width / aspectRatio;
+      return {
+        left: (window.innerWidth - width) / 2,
+        top: (window.innerHeight - height) / 2,
+        width,
+        height,
+      };
+    }
+
+    function setLightboxImageRect(rect, borderRadius) {
+      lightboxImage.style.left = rect.left + 'px';
+      lightboxImage.style.top = rect.top + 'px';
+      lightboxImage.style.width = rect.width + 'px';
+      lightboxImage.style.height = rect.height + 'px';
+      lightboxImage.style.borderRadius = borderRadius;
+    }
+
+    function openLightbox(src, card) {
+      if (!card || lightboxIsOpen) return;
+      window.clearTimeout(lightboxTransitionTimer);
+      activeCard = card;
+      lightboxIsOpen = true;
+      const sourceRect = card.getBoundingClientRect();
+      lightboxImage.src = src;
+      lightboxImage.style.transition = 'none';
+      lightboxImage.style.objectFit = fit;
+      setLightboxImageRect(sourceRect, '14px');
+      lightbox.classList.add('open');
+
+      const startAnimation = () => {
+        const aspectRatio = lightboxImage.naturalWidth > 0 && lightboxImage.naturalHeight > 0
+          ? lightboxImage.naturalWidth / lightboxImage.naturalHeight
+          : sourceRect.width / Math.max(1, sourceRect.height);
+        const targetRect = getPreviewRect(aspectRatio);
+        requestAnimationFrame(() => {
+          lightboxImage.style.transition = 'left 480ms cubic-bezier(0.19, 1, 0.22, 1), top 480ms cubic-bezier(0.19, 1, 0.22, 1), width 480ms cubic-bezier(0.19, 1, 0.22, 1), height 480ms cubic-bezier(0.19, 1, 0.22, 1), border-radius 480ms cubic-bezier(0.19, 1, 0.22, 1)';
+          lightboxImage.style.objectFit = 'contain';
+          setLightboxImageRect(targetRect, '28px');
+        });
+      };
+
+      if (lightboxImage.complete && lightboxImage.naturalWidth > 0) {
+        startAnimation();
+      } else {
+        lightboxImage.addEventListener('load', startAnimation, { once: true });
+      }
+    }
+
+    function closeLightbox() {
+      if (!lightboxIsOpen) return;
+      window.clearTimeout(lightboxTransitionTimer);
+      const targetRect = activeCard ? activeCard.getBoundingClientRect() : {
+        left: window.innerWidth / 2,
+        top: window.innerHeight / 2,
+        width: 1,
+        height: 1,
+      };
+      lightboxImage.style.transition = 'left 360ms cubic-bezier(0.19, 1, 0.22, 1), top 360ms cubic-bezier(0.19, 1, 0.22, 1), width 360ms cubic-bezier(0.19, 1, 0.22, 1), height 360ms cubic-bezier(0.19, 1, 0.22, 1), border-radius 360ms cubic-bezier(0.19, 1, 0.22, 1)';
+      lightboxImage.style.objectFit = fit;
+      setLightboxImageRect(targetRect, '14px');
+      lightboxTransitionTimer = window.setTimeout(() => {
+        lightbox.classList.remove('open');
+        lightboxImage.removeAttribute('src');
+        activeCard = null;
+        lightboxIsOpen = false;
+      }, 330);
+    }
+
+    function getPointerDistance() {
+      const points = Array.from(activePointers.values());
+      if (points.length < 2) return 0;
+      return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+    }
+
+    function endPointer(pointerId) {
+      activePointers.delete(pointerId);
+      if (activePointers.size < 2) {
+        isPinching = false;
+        pinchStartDistance = 0;
+      }
+      if (activePointers.size === 0) {
+        isDragging = false;
+      }
+    }
+
+    stage.addEventListener('pointerdown', (event) => {
+      activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      isDragging = true;
+      moved = false;
+      startX = lastX = event.clientX;
+      startY = lastY = event.clientY;
+      stage.setPointerCapture(event.pointerId);
+      if (activePointers.size === 2) {
+        isPinching = true;
+        moved = true;
+        pinchStartDistance = getPointerDistance();
+        pinchStartZoom = targetZoom;
+      }
+    });
+    stage.addEventListener('pointermove', (event) => {
+      if (!activePointers.has(event.pointerId)) return;
+      activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (isPinching && activePointers.size >= 2) {
+        const distance = getPointerDistance();
+        if (pinchStartDistance > 0) {
+          targetZoom = clamp(pinchStartZoom * (distance / pinchStartDistance), .28, 2.8);
+        }
+        moved = true;
+        return;
+      }
+      if (!isDragging || activePointers.size !== 1) return;
+      const dx = event.clientX - lastX;
+      const dy = event.clientY - lastY;
+      if (Math.abs(event.clientX - startX) + Math.abs(event.clientY - startY) > 8) moved = true;
+      targetRotationY += dx * .22;
+      targetRotationX = clamp(targetRotationX - dy * .16, -78, 78);
+      lastX = event.clientX;
+      lastY = event.clientY;
+    });
+    stage.addEventListener('pointerup', (event) => {
+      const wasPinching = isPinching;
+      endPointer(event.pointerId);
+      if (!moved) {
+        const pointerTarget = document.elementFromPoint(event.clientX, event.clientY);
+        const card = pointerTarget && pointerTarget.closest ? pointerTarget.closest('.card') : null;
+        if (card) openLightbox(photos[Number(card.dataset.index)], card);
+      }
+      setTimeout(() => { if (!wasPinching) moved = false; }, 80);
+    });
+    stage.addEventListener('pointercancel', (event) => {
+      endPointer(event.pointerId);
+      moved = true;
+    });
+    stage.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      const speed = event.ctrlKey ? .0032 : .0018;
+      targetZoom = clamp(targetZoom * Math.exp(-event.deltaY * speed), .28, 2.8);
+    }, { passive: false });
+    closeButton.addEventListener('click', closeLightbox);
+    lightbox.addEventListener('click', (event) => {
+      closeLightbox();
+    });
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeLightbox();
+    });
+
+    renderCards();
+    animate();
+  </script>
+</body>
+</html>`;
+  };
+
+  const handleExportHtml = async () => {
+    if (!selectedStyle || isExporting) return;
+    setIsExporting(true);
+    try {
+      const photoDataUrls = await Promise.all(images.map((url) => blobUrlToDataUrl(url)));
+      const html = buildStandaloneGalleryHtml({
+        title: `${selectedStyle.name}-3D相册`,
+        styleId: selectedStyle.id,
+        styleName: selectedStyle.name,
+        photoDataUrls,
+        cropToSquare: cropPreviewPhotos,
+      });
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `${selectedStyle.name}-3D相册.html`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+    } catch {
+      alert('导出失败，请稍后重试');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const handleFileList = async (fileArray: File[]) => {
     if (isUploading) return;
@@ -374,26 +892,39 @@ export default function App() {
   };
 
   const handleReset = () => {
+    clearPreviewSwitchTimers();
     images.forEach((url) => URL.revokeObjectURL(url));
     setImages([]);
     setIsGenerating(false);
     setIsLoading(false);
+    setPreviewSwitchingStyleId(null);
   };
 
   const handleExitPreview = () => {
+    clearPreviewSwitchTimers();
     setIsGenerating(false);
     setIsLoading(false);
+    setPreviewSwitchingStyleId(null);
   };
 
   const handleSwitchPreviewStyle = (styleId: GalleryStyleId) => {
-    if (styleId === selectedStyleId) return;
+    if (styleId === selectedStyleId || previewSwitchingStyleId) return;
     const nextStyle = getStyleById(styleId);
     const error = getStyleSwitchError(nextStyle);
     if (error) {
       alert(error);
       return;
     }
-    setSelectedStyleId(styleId);
+    clearPreviewSwitchTimers();
+    setPreviewSwitchingStyleId(styleId);
+    previewSwitchStartTimerRef.current = window.setTimeout(() => {
+      setSelectedStyleId(styleId);
+      previewSwitchStartTimerRef.current = null;
+    }, 260);
+    previewSwitchEndTimerRef.current = window.setTimeout(() => {
+      setPreviewSwitchingStyleId(null);
+      previewSwitchEndTimerRef.current = null;
+    }, 900);
   };
 
   const handleSelectStyle = (styleId: GalleryStyleId, element?: HTMLElement) => {
@@ -440,9 +971,12 @@ export default function App() {
     setImages([]);
     setIsGenerating(false);
     setIsLoading(false);
+    setPreviewSwitchingStyleId(null);
   };
 
   const handleBackToStyles = () => {
+    clearPreviewSwitchTimers();
+    setPreviewSwitchingStyleId(null);
     if (selectedStyle) {
       const style = selectedStyle;
       const fullViewport = new DOMRect(0, 0, window.innerWidth, window.innerHeight);
@@ -663,7 +1197,7 @@ export default function App() {
   }
 
   if (isLoading) {
-    return <LoadingSpinner />;
+    return <LoadingSpinner message={`正在生成 ${selectedStyle.name}...`} />;
   }
 
   if (isGenerating) {
@@ -675,9 +1209,9 @@ export default function App() {
         </div>
         <ErrorBoundary>
           {selectedStyle.id === 'sphere' ? (
-            <PhotoSphere3D images={images} />
+            <PhotoSphere3D images={images} cropToSquare={cropPreviewPhotos} />
           ) : (
-            <PhotoLayout3D images={images} variant={selectedStyle.variant ?? 'cylinder'} />
+            <PhotoLayout3D images={images} variant={selectedStyle.variant ?? 'cylinder'} cropToSquare={cropPreviewPhotos} />
           )}
         </ErrorBoundary>
         <div className="absolute top-3 left-3 sm:top-6 sm:left-6 flex gap-3 z-10">
@@ -695,34 +1229,66 @@ export default function App() {
             重新选样式
           </button>
         </div>
-        <div className="absolute left-3 top-16 z-10 flex max-w-[calc(100vw-1.5rem)] gap-2 overflow-x-auto rounded-[22px] border border-white/15 bg-black/35 p-2 shadow-2xl backdrop-blur-md sm:left-6 sm:top-24 sm:max-w-none sm:flex-col sm:overflow-visible">
-          {GALLERY_STYLES.map((style) => {
-            const isActive = selectedStyle.id === style.id;
-            return (
-              <button
-                key={style.id}
-                type="button"
-                onClick={() => handleSwitchPreviewStyle(style.id)}
-                aria-current={isActive ? 'true' : undefined}
-                className={`group flex h-11 shrink-0 items-center gap-2 rounded-[16px] px-2.5 text-left text-xs font-semibold text-white transition-all active:scale-95 sm:h-12 sm:w-40 ${
-                  isActive
-                    ? 'bg-white text-slate-950 shadow-xl'
-                    : 'bg-white/10 hover:bg-white/18'
-                }`}
-              >
-                <img
-                  src={style.logo}
-                  alt=""
-                  aria-hidden="true"
-                  className="size-7 shrink-0 object-contain sm:size-8"
-                  draggable={false}
-                />
-                <span className="whitespace-nowrap">{style.name}</span>
-              </button>
-            );
-          })}
+        <div className="absolute left-3 top-1/2 z-10 w-[180px] max-w-[calc(100vw-1.5rem)] -translate-y-1/2 rounded-[40px] border border-white/14 bg-black/28 p-4 shadow-2xl shadow-black/25 backdrop-blur-xl sm:left-6">
+          <div className="flex flex-col gap-3 rounded-[28px]">
+            {GALLERY_STYLES.map((style) => {
+              const isActive = selectedStyle.id === style.id;
+              return (
+                <button
+                  key={style.id}
+                  type="button"
+                  onClick={() => handleSwitchPreviewStyle(style.id)}
+                  aria-current={isActive ? 'true' : undefined}
+                  className={`group flex h-14 w-full shrink-0 items-center gap-2 rounded-[26px] px-3 text-left text-sm font-semibold transition-all active:scale-95 ${
+                    isActive
+                      ? 'bg-white text-slate-950 shadow-xl shadow-black/20'
+                      : 'bg-white/12 text-white/90 shadow-sm hover:bg-white/20'
+                  }`}
+                >
+                  <img
+                    src={style.logo}
+                    alt=""
+                    aria-hidden="true"
+                    className="size-7 shrink-0 object-contain"
+                    draggable={false}
+                  />
+                  <span className="min-w-0 flex-1 whitespace-nowrap">{style.name}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="absolute top-3 right-3 sm:top-6 sm:right-6 flex gap-3 z-10">
+        <div className="absolute top-3 right-3 sm:top-6 sm:right-6 flex max-w-[calc(100vw-1.5rem)] flex-wrap justify-end gap-3 z-10">
+          <button
+            type="button"
+            onClick={handleExportHtml}
+            disabled={isExporting}
+            className="px-3 py-2 sm:px-6 sm:py-3 bg-white/90 hover:bg-white text-black rounded-full flex items-center gap-1.5 sm:gap-2 transition-all shadow-2xl active:scale-95 sm:hover:scale-105 text-sm sm:text-base disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="w-4 h-4 sm:w-5 sm:h-5" />
+            {isExporting ? '导出中' : '导出HTML'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setCropPreviewPhotos((current) => !current)}
+            aria-pressed={cropPreviewPhotos}
+            className="px-3 py-2 sm:px-6 sm:py-3 bg-white/90 hover:bg-white text-black rounded-full flex items-center gap-1.5 sm:gap-2 transition-all shadow-2xl active:scale-95 sm:hover:scale-105 text-sm sm:text-base"
+          >
+            <Crop className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span>1:1 裁剪</span>
+            <span
+              className={`relative ml-1 h-6 w-11 rounded-full p-0.5 transition-colors ${
+                cropPreviewPhotos ? 'bg-purple-600' : 'bg-slate-300'
+              }`}
+              aria-hidden="true"
+            >
+              <span
+                className={`block size-5 rounded-full bg-white shadow-md transition-transform duration-200 ease-out ${
+                  cropPreviewPhotos ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </span>
+          </button>
           <button
             onClick={handleReset}
             className="px-3 py-2 sm:px-6 sm:py-3 bg-white/90 hover:bg-white text-black rounded-full flex items-center gap-1.5 sm:gap-2 transition-all shadow-2xl active:scale-95 sm:hover:scale-105 text-sm sm:text-base"
@@ -737,6 +1303,12 @@ export default function App() {
         <div className="absolute bottom-3 right-3 sm:bottom-6 sm:right-6 bg-black/40 text-white/80 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full backdrop-blur-sm text-[10px] sm:text-sm">
           🎮 单指旋转 · 双指缩放
         </div>
+        {previewSwitchingStyle && (
+          <LoadingSpinner
+            message={`正在切换到 ${previewSwitchingStyle.name}...`}
+            className="z-30 bg-gradient-to-br from-gray-900/95 via-purple-900/95 to-black/95"
+          />
+        )}
       </div>
     );
   }
@@ -750,8 +1322,8 @@ export default function App() {
     52;
   const previewColumnCount = Math.min(Math.max(images.length, 1), 10);
   const previewGridWidth = previewTileSize * previewColumnCount + 12 * Math.max(0, previewColumnCount - 1);
-  const previewPanelWidth = previewGridWidth + 40;
-  const uploadedFrameWidth = Math.min(Math.max(previewPanelWidth + 64, 480), 980);
+  const previewPanelWidth = previewGridWidth + 32;
+  const uploadedFrameWidth = Math.min(Math.max(previewPanelWidth + 44, 460), 940);
   const hasUploadedImages = images.length > 0;
   return (
     <div className={`h-dvh flex justify-center bg-gradient-to-br ${selectedStyle.surface} relative overflow-hidden`}>
@@ -798,9 +1370,9 @@ export default function App() {
           style={{
             width: hasUploadedImages ? `${uploadedFrameWidth}px` : 'min(100%, clamp(380px, 48dvh, 520px))',
             maxWidth: hasUploadedImages ? '92vw' : undefined,
-            height: hasUploadedImages ? 'clamp(380px, 48dvh, 520px)' : 'min(100%, clamp(380px, 48dvh, 520px))',
+            height: hasUploadedImages ? 'clamp(360px, 46dvh, 500px)' : 'min(100%, clamp(380px, 48dvh, 520px))',
           }}
-          className={`relative border-4 border-dashed rounded-[56px] p-7 text-center transition-all duration-300 shadow-xl flex shrink-0 self-center ${
+          className={`relative border-4 border-dashed rounded-[56px] p-4 text-center transition-all duration-300 shadow-xl flex shrink-0 self-center sm:p-5 ${
             isDragging
               ? 'border-purple-500 bg-purple-100/80 scale-105 shadow-2xl shadow-purple-500/50'
               : 'border-gray-300 bg-white/80 backdrop-blur-sm hover:border-purple-400 hover:shadow-2xl'
@@ -815,7 +1387,7 @@ export default function App() {
             className="hidden"
           />
 
-          <div className="flex flex-col items-center gap-4 w-full min-h-0">
+          <div className="flex flex-col items-center gap-3 w-full min-h-0">
             {images.length === 0 ? (
               <div className="w-full min-h-0 flex flex-1 flex-col items-center">
                 <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4">
@@ -843,7 +1415,7 @@ export default function App() {
               </div>
             ) : (
               <div className="w-full min-h-0 flex flex-1 flex-col animate-fade-in">
-                <div className="flex shrink-0 items-center justify-between mb-3 px-1">
+                <div className="flex shrink-0 items-center justify-between mb-2 px-0">
                   <p className="text-base text-gray-700">
                     已上传 <span className="text-purple-600 font-bold text-xl">{images.length}</span> / {selectedStyle.maxPhotos} 张
                     {isUploading && (
@@ -866,7 +1438,7 @@ export default function App() {
                 </div>
 
                 <div
-                  className="flex-1 min-h-0 mx-auto overflow-y-auto overscroll-contain p-5 bg-gradient-to-br from-gray-50 to-purple-50 rounded-[34px] border border-purple-100 shadow-inner"
+                  className="flex-1 min-h-0 mx-auto overflow-y-auto overscroll-contain p-4 bg-gradient-to-br from-gray-50 to-purple-50 rounded-[34px] border border-purple-100 shadow-inner"
                   style={{ width: '100%', boxSizing: 'border-box' }}
                 >
                   <div
@@ -892,9 +1464,9 @@ export default function App() {
                         onClick={() => handleRemoveImage(index)}
                         disabled={isUploading}
                         aria-label={`删除第 ${index + 1} 张照片`}
-                        className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/70 text-white flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-500 active:scale-95"
+                        className="absolute top-1 right-1 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-black/65 text-white opacity-100 shadow-md transition-opacity hover:bg-red-500 active:scale-95 sm:opacity-0 sm:group-hover:opacity-100"
                       >
-                        <X className="w-4 h-4" />
+                        <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   ))}
@@ -930,18 +1502,21 @@ export default function App() {
           </div>
         </div>
 
-        <div className="mt-auto pb-3 pt-5 text-center space-y-2 shrink-0">
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-8 text-sm text-gray-600">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">✨</span>
+        <div className="mt-auto pb-3 pt-5 text-center space-y-2.5 shrink-0">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 text-sm font-medium text-white/80">
+            <div className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 shadow-sm backdrop-blur-md">
+              <Sparkles className="size-4 text-fuchsia-200" />
               <span>支持 JPG、PNG、HEIC 等格式</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-lg">🎮</span>
+            <div className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 shadow-sm backdrop-blur-md">
+              <Gamepad2 className="size-4 text-sky-200" />
               <span>生成后可自由旋转、缩放</span>
             </div>
           </div>
-          <p className="text-xs text-gray-400">完美支持苹果 iPhone 相机拍摄的照片</p>
+          <p className="inline-flex items-center justify-center gap-1.5 rounded-full border border-white/10 bg-black/15 px-3 py-1.5 text-xs font-medium text-white/55 backdrop-blur-sm">
+            <Smartphone className="size-3.5 text-white/45" />
+            完美支持苹果 iPhone 相机拍摄的照片
+          </p>
         </div>
       </div>
       {renderHomeTransitionCover()}
