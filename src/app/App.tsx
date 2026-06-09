@@ -161,8 +161,6 @@ export default function App() {
   const selectedStyle = selectedStyleId ? getStyleById(selectedStyleId) : null;
   const previewSwitchingStyle = previewSwitchingStyleId ? getStyleById(previewSwitchingStyleId) : null;
   const maxPhotos = selectedStyle?.maxPhotos ?? GALLERY_STYLES[0].maxPhotos;
-  const minPhotos = selectedStyle?.minPhotos ?? GALLERY_STYLES[0].minPhotos;
-
   const clearPreviewSwitchTimers = () => {
     if (previewSwitchStartTimerRef.current) {
       window.clearTimeout(previewSwitchStartTimerRef.current);
