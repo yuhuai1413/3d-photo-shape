@@ -1,14 +1,15 @@
 # 3D Photo Shape
 
-Interactive gallery to assemble photos into 3D shapes like sphere, cube and spiral.
+Interactive gallery to assemble photos into 3D shapes like sphere, cylinder, polyhedron and spiral.
 
 A creative web application that transforms your photo collection into stunning 3D visualizations. Upload your images and watch them assemble into beautiful geometric shapes - perfect for creating unique visual presentations.
 
 ## Features
 
-- 🔵 **Sphere Layout** - Arrange photos on the surface of a sphere
-- 🟦 **Cube Layout** - Create a 3D cube with photos on each face
-- 🌀 **Spiral Layout** - Display photos in an elegant spiral pattern
+- 🔵 **Sphere Layout** - Photos arranged on the surface of a sphere for immersive browsing
+- 🟦 **Cylinder Layout** - Ring-shaped gallery for stable horizontal browsing
+- 🔷 **Polyhedron Layout** - Photos distributed on crystal facets for elegant display
+- 🌀 **Spiral Layout** - Photos along an ascending orbit, perfect for timelines
 - 🎨 **Interactive Controls** - Rotate, zoom, and explore your 3D gallery
 - 📱 **Responsive Design** - Works seamlessly on desktop and mobile devices
 - ⚡ **Smooth Animations** - Elegant transitions and rotations
@@ -62,22 +63,36 @@ pnpm build
 ```
 src/
 ├── app/
-│   ├── components/
-│   │   ├── PhotoLayout3D.tsx      # Main 3D layout component
+│   └── App.tsx                    # Main application component
+├── components/
+│   ├── 3d/
 │   │   ├── PhotoSphere3D.tsx      # Sphere layout implementation
-│   │   ├── LoadingSpinner.tsx     # Loading indicator
-│   │   └── ...
-│   ├── App.tsx                    # Application entry point
-│   └── ...
-├── public/                        # Static assets
-└── ...
+│   │   ├── PhotoLayout3D.tsx      # Cylinder/Polyhedron/Spiral layouts
+│   │   └── index.ts
+│   ├── common/
+│   │   ├── ErrorBoundary.tsx
+│   │   ├── LoadingSpinner.tsx
+│   │   └── index.ts
+│   ├── ui/
+│   │   ├── button.tsx
+│   │   └── card.tsx
+│   └── index.ts
+├── types/
+│   └── gallery.ts
+├── utils/
+│   ├── constants.ts
+│   ├── validators.ts
+│   └── index.ts
+├── styles/
+├── assets/
+└── main.tsx
 ```
 
 ## Usage
 
 1. Open the application in your browser
 2. Upload your photos
-3. Select a 3D layout (Sphere, Cube, or Spiral)
+3. Select a 3D layout (Sphere, Cylinder, Polyhedron, or Spiral)
 4. Interact with your 3D gallery:
    - **Mouse/Touch**: Rotate the gallery
    - **Scroll**: Zoom in/out
