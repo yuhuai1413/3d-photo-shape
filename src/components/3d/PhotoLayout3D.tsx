@@ -7,6 +7,7 @@ export type PhotoLayoutVariant = 'cylinder' | 'polyhedron' | 'spiral';
 interface PhotoLayout3DProps {
   images: string[];
   variant: PhotoLayoutVariant;
+  cropToSquare?: boolean;
 }
 
 type PhotoPlacement = {
@@ -20,9 +21,12 @@ type ScreenPoint = { x: number; y: number };
 type ScreenRect = { left: number; top: number; width: number; height: number };
 type MeshProjection = { rect: ScreenRect; clipPath: string };
 
-const CYLINDER_PHOTOS_PER_RING = 16;
+const getRingColumnCount = (total: number) => {
+  const targetRows = total > 140 ? 5 : total > 84 ? 4 : 3;
+  return THREE.MathUtils.clamp(Math.ceil(total / targetRows), 16, 36);
+};
 
-export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
+export default function PhotoLayout3D({ images, variant, cropToSquare = true }: PhotoLayout3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,7 +74,129 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
     previewLayer.style.zIndex = '20';
     container.appendChild(previewLayer);
 
-    const createTexture = (url: string, onReady: (texture: THREE.CanvasTexture) => void) => {
+    const photoAspectRatio = 1.08;
+    const getDefaultPhotoSize = (total: number) => THREE.MathUtils.clamp(30 / Math.sqrt(total), 1.78, 2.6);
+
+    const framePalette = [
+      ['#23d7ff', '#ff42df'],
+      ['#4a7dff', '#35f0ff'],
+      ['#ff52cf', '#8b5cff'],
+      ['#2ae6ff', '#9d5cff'],
+    ];
+
+    const roundedRectPath = (
+      ctx: CanvasRenderingContext2D,
+      x: number,
+      y: number,
+      rectWidth: number,
+      rectHeight: number,
+      radiusValue: number,
+    ) => {
+      const cornerRadius = Math.min(radiusValue, rectWidth / 2, rectHeight / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + cornerRadius, y);
+      ctx.lineTo(x + rectWidth - cornerRadius, y);
+      ctx.quadraticCurveTo(x + rectWidth, y, x + rectWidth, y + cornerRadius);
+      ctx.lineTo(x + rectWidth, y + rectHeight - cornerRadius);
+      ctx.quadraticCurveTo(x + rectWidth, y + rectHeight, x + rectWidth - cornerRadius, y + rectHeight);
+      ctx.lineTo(x + cornerRadius, y + rectHeight);
+      ctx.quadraticCurveTo(x, y + rectHeight, x, y + rectHeight - cornerRadius);
+      ctx.lineTo(x, y + cornerRadius);
+      ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
+      ctx.closePath();
+    };
+
+    const drawFramedImage = (
+      ctx: CanvasRenderingContext2D,
+      img: HTMLImageElement,
+      size: number,
+      textureIndex: number,
+    ) => {
+      const framePadding = 34;
+      const imagePadding = 44;
+      const imageSize = size - imagePadding * 2;
+      const frameSize = size - framePadding * 2;
+      const [primaryColor, secondaryColor] = framePalette[textureIndex % framePalette.length];
+      const scale = cropToSquare
+        ? Math.max(imageSize / img.width, imageSize / img.height)
+        : Math.min(imageSize / img.width, imageSize / img.height);
+      const drawWidth = img.width * scale;
+      const drawHeight = img.height * scale;
+
+      ctx.save();
+      roundedRectPath(ctx, imagePadding, imagePadding, imageSize, imageSize, 24);
+      ctx.clip();
+      ctx.drawImage(
+        img,
+        imagePadding + (imageSize - drawWidth) / 2,
+        imagePadding + (imageSize - drawHeight) / 2,
+        drawWidth,
+        drawHeight,
+      );
+      ctx.restore();
+
+      const strokeGradient = ctx.createLinearGradient(framePadding, framePadding, size - framePadding, size - framePadding);
+      strokeGradient.addColorStop(0, primaryColor);
+      strokeGradient.addColorStop(0.48, '#faf7ff');
+      strokeGradient.addColorStop(1, secondaryColor);
+
+      ctx.save();
+      roundedRectPath(ctx, framePadding, framePadding, frameSize, frameSize, 34);
+      ctx.strokeStyle = strokeGradient;
+      ctx.lineJoin = 'round';
+      ctx.shadowColor = primaryColor;
+      ctx.shadowBlur = 34;
+      ctx.lineWidth = 20;
+      ctx.globalAlpha = 0.48;
+      ctx.stroke();
+      ctx.shadowColor = secondaryColor;
+      ctx.shadowBlur = 22;
+      ctx.lineWidth = 11;
+      ctx.globalAlpha = 0.58;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.88)';
+      ctx.stroke();
+      ctx.restore();
+
+      const capLength = 58;
+      const capInset = 13;
+      const capPositions = [
+        { x1: framePadding + capInset, y1: framePadding, x2: framePadding + capInset + capLength, y2: framePadding, color: primaryColor },
+        { x1: size - framePadding - capInset - capLength, y1: framePadding, x2: size - framePadding - capInset, y2: framePadding, color: secondaryColor },
+        { x1: framePadding + capInset, y1: size - framePadding, x2: framePadding + capInset + capLength, y2: size - framePadding, color: secondaryColor },
+        { x1: size - framePadding - capInset - capLength, y1: size - framePadding, x2: size - framePadding - capInset, y2: size - framePadding, color: primaryColor },
+        { x1: framePadding, y1: framePadding + capInset, x2: framePadding, y2: framePadding + capInset + capLength, color: secondaryColor },
+        { x1: size - framePadding, y1: framePadding + capInset, x2: size - framePadding, y2: framePadding + capInset + capLength, color: primaryColor },
+        { x1: framePadding, y1: size - framePadding - capInset - capLength, x2: framePadding, y2: size - framePadding - capInset, color: primaryColor },
+        { x1: size - framePadding, y1: size - framePadding - capInset - capLength, x2: size - framePadding, y2: size - framePadding - capInset, color: secondaryColor },
+      ];
+
+      ctx.save();
+      ctx.lineCap = 'round';
+      capPositions.forEach((cap) => {
+        ctx.strokeStyle = cap.color;
+        ctx.shadowColor = cap.color;
+        ctx.shadowBlur = 18;
+        ctx.lineWidth = 8;
+        ctx.globalAlpha = 0.72;
+        ctx.beginPath();
+        ctx.moveTo(cap.x1, cap.y1);
+        ctx.lineTo(cap.x2, cap.y2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 3;
+        ctx.globalAlpha = 1;
+        ctx.stroke();
+      });
+      ctx.restore();
+    };
+
+    const createTexture = (url: string, textureIndex: number, onReady: (texture: THREE.CanvasTexture) => void) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -81,10 +207,7 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
         if (!ctx) return;
 
         ctx.clearRect(0, 0, size, size);
-        const scale = Math.min(size / img.width, size / img.height);
-        const drawWidth = img.width * scale;
-        const drawHeight = img.height * scale;
-        ctx.drawImage(img, (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
+        drawFramedImage(ctx, img, size, textureIndex);
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.colorSpace = THREE.SRGBColorSpace;
@@ -96,31 +219,42 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
     };
 
     const getCylinderPlacement = (index: number, total: number): PhotoPlacement => {
-      const columns = CYLINDER_PHOTOS_PER_RING;
+      const defaultPhotoSize = getDefaultPhotoSize(total);
+      const columns = getRingColumnCount(total);
       const rows = Math.ceil(total / columns);
       const column = index % columns;
       const row = Math.floor(index / columns);
       const angle = (column / columns) * Math.PI * 2;
-      const radius = 9.6;
-      const verticalGap = 2.2;
+      const radius = THREE.MathUtils.clamp(columns * 0.38, 10.8, 14.2);
+      const verticalGap = THREE.MathUtils.clamp(10.6 / Math.max(1, rows - 1), 2.25, 2.95);
       const y = (rows - 1) * verticalGap * 0.5 - row * verticalGap;
       const position = new THREE.Vector3(Math.sin(angle) * radius, y, Math.cos(angle) * radius);
       const rotation = new THREE.Euler(0, angle, 0);
-      return { position, rotation, width: 2.35, height: 1.72 };
+      const slotWidth = (Math.PI * 2 * radius) / columns;
+      const photoSize = Math.min((slotWidth * 0.98) / photoAspectRatio, verticalGap * 0.98, defaultPhotoSize);
+      return {
+        position,
+        rotation,
+        width: cropToSquare ? photoSize * photoAspectRatio : photoSize * 1.28,
+        height: photoSize,
+      };
     };
 
     const getPolyhedronPlacement = (index: number, total: number): PhotoPlacement => {
+      const defaultPhotoSize = getDefaultPhotoSize(total);
       const faceIndex = index % 6;
-      const facePhotoCount = Math.ceil(total / 6);
+      const facePhotoCount = Math.floor((total + 5 - faceIndex) / 6);
       const indexInFace = Math.floor(index / 6);
-      const grid = Math.ceil(Math.sqrt(facePhotoCount));
-      const row = Math.floor(indexInFace / grid);
-      const column = indexInFace % grid;
-      const cubeHalfSize = 6.6;
-      const cellSize = (cubeHalfSize * 2) / grid;
-      const photoSize = cellSize * 0.9;
-      const offsetX = -cubeHalfSize + cellSize * (column + 0.5);
-      const offsetY = cubeHalfSize - cellSize * (row + 0.5);
+      const columns = Math.min(5, Math.ceil(Math.sqrt(facePhotoCount)));
+      const rows = Math.ceil(facePhotoCount / columns);
+      const row = Math.floor(indexInFace / columns);
+      const column = indexInFace % columns;
+      const cubeHalfSize = 7.4;
+      const cellWidth = (cubeHalfSize * 2) / columns;
+      const cellHeight = (cubeHalfSize * 2) / rows;
+      const photoSize = Math.min((cellWidth * 0.94) / photoAspectRatio, cellHeight * 0.94, defaultPhotoSize);
+      const offsetX = -cubeHalfSize + cellWidth * (column + 0.5);
+      const offsetY = cubeHalfSize - cellHeight * (row + 0.5);
       const outwardOffset = 0.05;
 
       const faceConfigs = [
@@ -150,18 +284,32 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
         },
       ];
 
-      return { ...faceConfigs[faceIndex], width: photoSize, height: photoSize };
+      return {
+        ...faceConfigs[faceIndex],
+        width: cropToSquare ? photoSize * photoAspectRatio : photoSize * 1.28,
+        height: photoSize,
+      };
     };
 
     const getSpiralPlacement = (index: number, total: number): PhotoPlacement => {
+      const defaultPhotoSize = getDefaultPhotoSize(total);
       const progress = total === 1 ? 0.5 : index / (total - 1);
-      const turns = Math.max(2.8, Math.min(7.5, total / 12));
+      const turns = THREE.MathUtils.clamp(total / 34, 2.8, 4.8);
       const angle = progress * Math.PI * 2 * turns;
-      const radius = 8.8;
-      const y = (0.5 - progress) * Math.max(12, Math.min(18, total * 0.18));
+      const radius = 13.4;
+      const ySpan = Math.max(defaultPhotoSize * turns * 1.18, THREE.MathUtils.clamp(total * 0.062, 8.4, 12.8));
+      const y = (0.5 - progress) * ySpan;
       const position = new THREE.Vector3(Math.sin(angle) * radius, y, Math.cos(angle) * radius);
       const rotation = new THREE.Euler(0, angle, 0);
-      return { position, rotation, width: 2.1, height: 1.55 };
+      const photosPerTurn = Math.max(1, total / turns);
+      const slotWidth = (Math.PI * 2 * radius) / photosPerTurn;
+      const photoSize = Math.min((slotWidth * 0.96) / photoAspectRatio, defaultPhotoSize);
+      return {
+        position,
+        rotation,
+        width: cropToSquare ? photoSize * photoAspectRatio : photoSize * 1.28,
+        height: photoSize,
+      };
     };
 
     const getPlacement = (index: number, total: number) => {
@@ -188,7 +336,7 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
       meshes.push(mesh);
       materials.push(material);
 
-      createTexture(url, (texture) => {
+      createTexture(url, index, (texture) => {
         textures.push(texture);
         material.map = texture;
         material.color.set(0xffffff);
@@ -415,7 +563,26 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
+    const pointerStart = { x: 0, y: 0 };
+    let pointerMoved = false;
+
+    const onPointerDown = (event: PointerEvent) => {
+      pointerStart.x = event.clientX;
+      pointerStart.y = event.clientY;
+      pointerMoved = false;
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (pointerMoved) return;
+      const distance = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
+      if (distance > 6) pointerMoved = true;
+    };
+
     const onClick = (event: MouseEvent) => {
+      if (pointerMoved) {
+        pointerMoved = false;
+        return;
+      }
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -432,6 +599,8 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
         showPreview(mesh, mesh.userData.imageIndex);
       }
     };
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('click', onClick);
 
     let raf = 0;
@@ -466,6 +635,8 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
       cancelled = true;
       cancelAnimationFrame(raf);
       ro.disconnect();
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('click', onClick);
       controls.dispose();
       previewAnimation?.cancel();
@@ -482,7 +653,7 @@ export default function PhotoLayout3D({ images, variant }: PhotoLayout3DProps) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [images, variant]);
+  }, [images, variant, cropToSquare]);
 
   return <div ref={containerRef} className="absolute inset-0" style={{ touchAction: 'none' }} />;
 }
