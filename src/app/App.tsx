@@ -1,58 +1,18 @@
-import { useState, useRef, Component, ReactNode, CSSProperties } from 'react';
+import { useState, useRef, CSSProperties } from 'react';
 import { Upload, Camera, Trash2, ArrowLeft, X, Sparkles, Shapes } from 'lucide-react';
-import PhotoSphere3D from './components/PhotoSphere3D';
-import PhotoLayout3D, { PhotoLayoutVariant } from './components/PhotoLayout3D';
-import LoadingSpinner from './components/LoadingSpinner';
+import { PhotoSphere3D, PhotoLayout3D, ErrorBoundary, LoadingSpinner } from '../components';
+import type { PhotoLayoutVariant } from '../components/3d/PhotoLayout3D';
+import { IMAGE_FILE_PATTERN, UPLOAD_CONFIG, validatePhotos, validatePhotoCount } from '../utils';
+import type { GalleryStyleId, GalleryStyle } from '../types/gallery';
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null };
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-  componentDidCatch(error: Error, info: any) {
-    console.error('3D gallery crashed:', error, info);
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <div className="absolute inset-0 flex items-center justify-center p-6 text-white">
-          <div className="max-w-lg bg-red-900/60 rounded-2xl p-6 backdrop-blur-md border border-red-400/40">
-            <p className="text-lg font-bold mb-2">3D 影像空间渲染出错</p>
-            <pre className="text-xs whitespace-pre-wrap break-all opacity-80">
-              {String(this.state.error?.message || this.state.error)}
-            </pre>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
+const STYLE_CARD_RADIUS = UPLOAD_CONFIG.cardRadius;
+const STYLE_TRANSITION_MS = UPLOAD_CONFIG.transitionMs;
+const STYLE_TRANSITION_SETTLE_MS = UPLOAD_CONFIG.transitionSettleMs;
+const STYLE_UPLOAD_LOGO_SIZE = UPLOAD_CONFIG.logoSize;
+const STYLE_UPLOAD_TITLE_WIDTH = UPLOAD_CONFIG.titleWidth;
+const STYLE_UPLOAD_TITLE_HEIGHT = UPLOAD_CONFIG.titleHeight;
 
-const IMAGE_FILE_PATTERN = /\.(avif|bmp|gif|heic|heif|jpe?g|png|webp)$/i;
-const STYLE_CARD_RADIUS = 48;
-const STYLE_TRANSITION_MS = 620;
-const STYLE_TRANSITION_SETTLE_MS = STYLE_TRANSITION_MS + 180;
-const STYLE_UPLOAD_LOGO_SIZE = 112;
-const STYLE_UPLOAD_TITLE_WIDTH = 320;
-const STYLE_UPLOAD_TITLE_HEIGHT = 58;
 
-type GalleryStyleId = 'sphere' | 'cylinder' | 'polyhedron' | 'spiral';
-
-type GalleryStyle = {
-  id: GalleryStyleId;
-  name: string;
-  subtitle: string;
-  requirement: string;
-  minPhotos: number;
-  maxPhotos: number;
-  multipleOf?: number;
-  accent: string;
-  surface: string;
-  preview: 'orb' | 'cylinder' | 'polyhedron' | 'spiral';
-  logo: string;
-  variant?: PhotoLayoutVariant;
-};
 
 type StyleTransition = {
   style: GalleryStyle;
